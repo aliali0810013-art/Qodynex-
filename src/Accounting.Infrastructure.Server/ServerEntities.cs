@@ -56,6 +56,7 @@ public sealed class ServerFinancialDocument : ServerTenantEntity
 {
     public string DocumentType { get; set; } = string.Empty;
     public string ModuleKey { get; set; } = string.Empty;
+    public string ModuleMetadataJson { get; set; } = "{}";
     public string LocalTempNumber { get; set; } = string.Empty;
     public string OfficialSequenceNumber { get; set; } = string.Empty;
     public long OfficialSequence { get; set; }
