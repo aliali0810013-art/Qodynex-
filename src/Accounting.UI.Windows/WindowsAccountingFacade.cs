@@ -1,3 +1,4 @@
+using System.Data;
 using Accounting.Application;
 using Accounting.Domain;
 using Accounting.Infrastructure.Local;
@@ -98,48 +99,87 @@ public sealed class WindowsAccountingFacade
     public async Task<PostingResult> PostSalesAsync(Guid warehouseId, Guid settlementAccountId, Guid? partnerId, string moduleKey,
         string moduleMetadataJson, IReadOnlyList<InvoiceDraftLine> lines, CancellationToken ct = default)
     {
-        var number = await _numbers.NextAsync(_user, nameof(SalesInvoice), ct).ConfigureAwait(false);
-        var invoice = new SalesInvoice(_user.CompanyId, _user.BranchId, number, moduleKey, DateTimeOffset.UtcNow, warehouseId, settlementAccountId, partnerId);
-        invoice.SetModuleMetadata(moduleMetadataJson);
-        foreach (var line in lines) invoice.AddLine(line.ItemId, line.UnitOfMeasureId, line.Quantity, line.BaseUnitsPerUnit, line.UnitPrice);
-        _db.SalesInvoices.Add(invoice);
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-        return await _posting.PostSalesInvoiceAsync(new PostSalesInvoiceCommand(invoice.Id,
-            new PostingCommandContext(_user, UuidV7.NewGuid(), $"sales:{invoice.Id:N}")), ct).ConfigureAwait(false);
+        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct).ConfigureAwait(false);
+        try
+        {
+            var number = await _numbers.NextAsync(_user, nameof(SalesInvoice), ct).ConfigureAwait(false);
+            var invoice = new SalesInvoice(_user.CompanyId, _user.BranchId, number, moduleKey, DateTimeOffset.UtcNow, warehouseId, settlementAccountId, partnerId);
+            invoice.SetModuleMetadata(moduleMetadataJson);
+            foreach (var line in lines)
+                invoice.AddLine(line.ItemId, line.UnitOfMeasureId, line.Quantity, line.BaseUnitsPerUnit, line.UnitPrice);
+            _db.SalesInvoices.Add(invoice);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            var result = await _posting.PostSalesInvoiceAsync(new PostSalesInvoiceCommand(invoice.Id,
+                new PostingCommandContext(_user, UuidV7.NewGuid(), $"sales:{invoice.Id:N}")), ct).ConfigureAwait(false);
+            await tx.CommitAsync(ct).ConfigureAwait(false);
+            return result;
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
     }
 
     public async Task<PostingResult> PostPurchaseAsync(Guid warehouseId, Guid settlementAccountId, Guid? partnerId, string moduleKey,
         IReadOnlyList<InvoiceDraftLine> lines, CancellationToken ct = default)
     {
-        var number = await _numbers.NextAsync(_user, nameof(PurchaseInvoice), ct).ConfigureAwait(false);
-        var invoice = new PurchaseInvoice(_user.CompanyId, _user.BranchId, number, moduleKey, DateTimeOffset.UtcNow, warehouseId, settlementAccountId, partnerId);
-        foreach (var line in lines) invoice.AddLine(line.ItemId, line.UnitOfMeasureId, line.Quantity, line.BaseUnitsPerUnit, line.UnitPrice);
-        _db.PurchaseInvoices.Add(invoice);
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-        return await _posting.PostPurchaseInvoiceAsync(new PostPurchaseInvoiceCommand(invoice.Id,
-            new PostingCommandContext(_user, UuidV7.NewGuid(), $"purchase:{invoice.Id:N}")), ct).ConfigureAwait(false);
+        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct).ConfigureAwait(false);
+        try
+        {
+            var number = await _numbers.NextAsync(_user, nameof(PurchaseInvoice), ct).ConfigureAwait(false);
+            var invoice = new PurchaseInvoice(_user.CompanyId, _user.BranchId, number, moduleKey, DateTimeOffset.UtcNow, warehouseId, settlementAccountId, partnerId);
+            foreach (var line in lines)
+                invoice.AddLine(line.ItemId, line.UnitOfMeasureId, line.Quantity, line.BaseUnitsPerUnit, line.UnitPrice);
+            _db.PurchaseInvoices.Add(invoice);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            var result = await _posting.PostPurchaseInvoiceAsync(new PostPurchaseInvoiceCommand(invoice.Id,
+                new PostingCommandContext(_user, UuidV7.NewGuid(), $"purchase:{invoice.Id:N}")), ct).ConfigureAwait(false);
+            await tx.CommitAsync(ct).ConfigureAwait(false);
+            return result;
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
     }
 
     public async Task<PostingResult> PostVoucherAsync(bool receipt, Guid cashAccountId, Guid counterAccountId, Guid? partnerId,
         decimal amount, string description, CancellationToken ct = default)
     {
-        if (receipt)
+        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct).ConfigureAwait(false);
+        try
         {
-            var number = await _numbers.NextAsync(_user, nameof(ReceiptVoucher), ct).ConfigureAwait(false);
-            var voucher = new ReceiptVoucher(_user.CompanyId, _user.BranchId, number, "CORE", DateTimeOffset.UtcNow,
-                cashAccountId, counterAccountId, amount, description, partnerId);
-            _db.ReceiptVouchers.Add(voucher); await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-            return await _posting.PostReceiptVoucherAsync(new PostReceiptVoucherCommand(voucher.Id,
-                new PostingCommandContext(_user, UuidV7.NewGuid(), $"receipt:{voucher.Id:N}")), ct).ConfigureAwait(false);
+            PostingResult result;
+            if (receipt)
+            {
+                var number = await _numbers.NextAsync(_user, nameof(ReceiptVoucher), ct).ConfigureAwait(false);
+                var voucher = new ReceiptVoucher(_user.CompanyId, _user.BranchId, number, "CORE", DateTimeOffset.UtcNow,
+                    cashAccountId, counterAccountId, amount, description, partnerId);
+                _db.ReceiptVouchers.Add(voucher);
+                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+                result = await _posting.PostReceiptVoucherAsync(new PostReceiptVoucherCommand(voucher.Id,
+                    new PostingCommandContext(_user, UuidV7.NewGuid(), $"receipt:{voucher.Id:N}")), ct).ConfigureAwait(false);
+            }
+            else
+            {
+                var number = await _numbers.NextAsync(_user, nameof(PaymentVoucher), ct).ConfigureAwait(false);
+                var voucher = new PaymentVoucher(_user.CompanyId, _user.BranchId, number, "CORE", DateTimeOffset.UtcNow,
+                    cashAccountId, counterAccountId, amount, description, partnerId);
+                _db.PaymentVouchers.Add(voucher);
+                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+                result = await _posting.PostPaymentVoucherAsync(new PostPaymentVoucherCommand(voucher.Id,
+                    new PostingCommandContext(_user, UuidV7.NewGuid(), $"payment:{voucher.Id:N}")), ct).ConfigureAwait(false);
+            }
+
+            await tx.CommitAsync(ct).ConfigureAwait(false);
+            return result;
         }
-        else
+        catch
         {
-            var number = await _numbers.NextAsync(_user, nameof(PaymentVoucher), ct).ConfigureAwait(false);
-            var voucher = new PaymentVoucher(_user.CompanyId, _user.BranchId, number, "CORE", DateTimeOffset.UtcNow,
-                cashAccountId, counterAccountId, amount, description, partnerId);
-            _db.PaymentVouchers.Add(voucher); await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-            return await _posting.PostPaymentVoucherAsync(new PostPaymentVoucherCommand(voucher.Id,
-                new PostingCommandContext(_user, UuidV7.NewGuid(), $"payment:{voucher.Id:N}")), ct).ConfigureAwait(false);
+            await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            throw;
         }
     }
 
