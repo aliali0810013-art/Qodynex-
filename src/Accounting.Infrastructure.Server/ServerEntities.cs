@@ -68,6 +68,7 @@ public sealed class ServerItem : ServerTenantEntity
 {
     public string Sku { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public string? Barcode { get; set; }
     public Guid BaseUnitOfMeasureId { get; set; }
     public ItemKind ItemKind { get; set; }
     public Guid InventoryAccountId { get; set; }
