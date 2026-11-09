@@ -1,0 +1,233 @@
+<Window x:Class="Accounting.UI.Windows.MainShellWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Accounting.UI.Windows"
+        Title="Qodynex Accounting" Width="1440" Height="900"
+        WindowStartupLocation="CenterScreen" FlowDirection="RightToLeft"
+        PreviewKeyDown="OnPreviewKeyDown">
+  <Window.Resources>
+    <DataTemplate DataType="{x:Type vm:InvoiceEditorViewModel}">
+      <Grid Margin="8">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="*"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Border BorderBrush="#D9DEE7" BorderThickness="1" CornerRadius="6" Padding="8">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="140"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="140"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="140"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="المستودع" VerticalAlignment="Center"/>
+            <TextBox Grid.Column="1" Text="{Binding WarehouseIdText, UpdateSourceTrigger=PropertyChanged}"/>
+            <TextBlock Grid.Column="2" Text="حساب التسوية" VerticalAlignment="Center"/>
+            <TextBox Grid.Column="3" Text="{Binding SettlementAccountIdText, UpdateSourceTrigger=PropertyChanged}"/>
+            <TextBlock Grid.Column="4" Text="العميل/المورد" VerticalAlignment="Center"/>
+            <TextBox Grid.Column="5" Text="{Binding PartnerIdText, UpdateSourceTrigger=PropertyChanged}"/>
+          </Grid>
+        </Border>
+        <Grid Grid.Row="1" Margin="0,6,0,4">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="2*"/>
+            <ColumnDefinition Width="3*"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <TextBox Grid.Column="0" Text="{Binding BarcodeInput, UpdateSourceTrigger=PropertyChanged}" ToolTip="الباركود/الكود - ماسح HID يضيف تلقائياً"/>
+          <TextBox Grid.Column="1" Text="{Binding ModuleMetadataJson, UpdateSourceTrigger=PropertyChanged}" ToolTip="بيانات الوحدة الاختيارية JSON"/>
+          <Button Grid.Column="2" Content="F2 حفظ وترحيل" Command="{Binding SaveCommand}"/>
+          <Button Grid.Column="3" Content="حذف السطر" Command="{Binding RemoveLineCommand}"/>
+        </Grid>
+        <DataGrid Grid.Row="2" ItemsSource="{Binding Lines}" SelectedItem="{Binding SelectedLine}" SelectionUnit="FullRow">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="الكود" Binding="{Binding Sku}" IsReadOnly="True" Width="130"/>
+            <DataGridTextColumn Header="الصنف" Binding="{Binding Name}" IsReadOnly="True" Width="*"/>
+            <DataGridTextColumn Header="الكمية" Binding="{Binding Quantity, UpdateSourceTrigger=PropertyChanged}" Width="100"/>
+            <DataGridTextColumn Header="معامل الوحدة" Binding="{Binding BaseUnitsPerUnit, UpdateSourceTrigger=PropertyChanged}" Width="110"/>
+            <DataGridTextColumn Header="السعر" Binding="{Binding UnitPrice, UpdateSourceTrigger=PropertyChanged}" Width="120"/>
+            <DataGridTextColumn Header="الإجمالي" Binding="{Binding LineTotal}" IsReadOnly="True" Width="130"/>
+          </DataGrid.Columns>
+        </DataGrid>
+        <Border Grid.Row="3" BorderBrush="#D9DEE7" BorderThickness="1" Padding="8" Margin="4">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+            <TextBlock Grid.Column="1" Text="{Binding Subtotal, StringFormat='قبل الضريبة: {0:N2}'}" Margin="16,0"/>
+            <TextBlock Grid.Column="2" Text="{Binding Tax, StringFormat='الضريبة: {0:N2}'}" Margin="16,0"/>
+            <TextBlock Grid.Column="3" Text="{Binding GrandTotal, StringFormat='الإجمالي: {0:N2}'}" FontWeight="Bold" Margin="16,0"/>
+          </Grid>
+        </Border>
+      </Grid>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:VoucherEditorViewModel}">
+      <Grid Margin="20" MaxWidth="900" HorizontalAlignment="Center">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock Text="{Binding Title}" FontSize="24" FontWeight="SemiBold" Margin="4,0,4,12"/>
+        <TextBox Grid.Row="1" Text="{Binding CashAccountIdText}" ToolTip="حساب الصندوق/البنك"/>
+        <TextBox Grid.Row="2" Text="{Binding CounterAccountIdText}" ToolTip="الحساب المقابل"/>
+        <TextBox Grid.Row="3" Text="{Binding PartnerIdText}" ToolTip="معرف العميل/المورد اختياري"/>
+        <StackPanel Grid.Row="4" Orientation="Horizontal">
+          <TextBox Width="220" Text="{Binding Amount}" ToolTip="المبلغ"/>
+          <TextBox Width="520" Text="{Binding Description}" ToolTip="البيان"/>
+          <Button Content="F2 حفظ وترحيل" Command="{Binding SaveCommand}"/>
+        </StackPanel>
+        <TextBlock Grid.Row="5" Text="{Binding Status}" Margin="4,12,4,4" TextWrapping="Wrap"/>
+      </Grid>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:QuickSearchViewModel}">
+      <Grid Margin="8">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <StackPanel Orientation="Horizontal">
+          <TextBox Width="520" Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}" ToolTip="صنف / عميل / مورد / حساب"/>
+          <Button Content="بحث" Command="{Binding SearchCommand}"/>
+        </StackPanel>
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Results}">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="النوع" Binding="{Binding Type}" Width="120"/>
+            <DataGridTextColumn Header="الكود" Binding="{Binding Code}" Width="150"/>
+            <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="*"/>
+            <DataGridTextColumn Header="المعرّف" Binding="{Binding Id}" Width="300"/>
+            <DataGridTextColumn Header="تفاصيل" Binding="{Binding Extra}" Width="220"/>
+          </DataGrid.Columns>
+        </DataGrid>
+        <TextBlock Grid.Row="2" Text="{Binding Status}" Margin="6"/>
+      </Grid>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:ItemsViewModel}">
+      <DataGrid ItemsSource="{Binding Items}" Margin="8">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="SKU" Binding="{Binding Sku}" Width="180"/>
+          <DataGridTextColumn Header="الصنف" Binding="{Binding Name}" Width="*"/>
+          <DataGridTextColumn Header="النوع" Binding="{Binding ItemKind}" Width="140"/>
+          <DataGridTextColumn Header="المعرّف" Binding="{Binding Id}" Width="300"/>
+        </DataGrid.Columns>
+      </DataGrid>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:PartnersViewModel}">
+      <DataGrid ItemsSource="{Binding Partners}" Margin="8">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="الكود" Binding="{Binding Code}" Width="160"/>
+          <DataGridTextColumn Header="الاسم" Binding="{Binding Name}" Width="*"/>
+          <DataGridTextColumn Header="حد الائتمان" Binding="{Binding CreditLimit}" Width="160"/>
+          <DataGridTextColumn Header="حساب الرقابة" Binding="{Binding ControlAccountId}" Width="300"/>
+        </DataGrid.Columns>
+      </DataGrid>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:LedgerViewModel}">
+      <Grid Margin="8">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="2*"/><RowDefinition Height="2*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <StackPanel Orientation="Horizontal">
+          <TextBox Width="420" Text="{Binding AccountIdText}" ToolTip="AccountId لدفتر الأستاذ"/>
+          <Button Content="F5 تحديث" Command="{Binding RefreshCommand, RelativeSource={RelativeSource AncestorType=Window}}" Visibility="Collapsed"/>
+        </StackPanel>
+        <DataGrid Grid.Row="1" ItemsSource="{Binding TrialBalance}">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="الكود" Binding="{Binding Code}" Width="130"/>
+            <DataGridTextColumn Header="الحساب" Binding="{Binding Name}" Width="*"/>
+            <DataGridTextColumn Header="مدين" Binding="{Binding Debit}" Width="130"/>
+            <DataGridTextColumn Header="دائن" Binding="{Binding Credit}" Width="130"/>
+            <DataGridTextColumn Header="الرصيد" Binding="{Binding Balance}" Width="140"/>
+          </DataGrid.Columns>
+        </DataGrid>
+        <DataGrid Grid.Row="2" ItemsSource="{Binding Rows}">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="التاريخ" Binding="{Binding DateUtc}" Width="180"/>
+            <DataGridTextColumn Header="المرجع" Binding="{Binding Reference}" Width="150"/>
+            <DataGridTextColumn Header="البيان" Binding="{Binding Description}" Width="*"/>
+            <DataGridTextColumn Header="مدين" Binding="{Binding Debit}" Width="120"/>
+            <DataGridTextColumn Header="دائن" Binding="{Binding Credit}" Width="120"/>
+            <DataGridTextColumn Header="الرصيد" Binding="{Binding RunningBalance}" Width="130"/>
+          </DataGrid.Columns>
+        </DataGrid>
+        <TextBlock Grid.Row="3" Text="{Binding Status}" Margin="6"/>
+      </Grid>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:ItemMovementViewModel}">
+      <Grid Margin="8">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <TextBlock Text="{Binding Summary}" FontSize="16" FontWeight="SemiBold" Margin="6"/>
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Rows}">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="التاريخ" Binding="{Binding DateUtc}" Width="190"/>
+            <DataGridTextColumn Header="المصدر" Binding="{Binding SourceType}" Width="180"/>
+            <DataGridTextColumn Header="الكمية" Binding="{Binding QuantityDelta}" Width="130"/>
+            <DataGridTextColumn Header="القيمة" Binding="{Binding InventoryValueDelta}" Width="150"/>
+            <DataGridTextColumn Header="تكلفة الوحدة" Binding="{Binding UnitCost}" Width="150"/>
+          </DataGrid.Columns>
+        </DataGrid>
+      </Grid>
+    </DataTemplate>
+  </Window.Resources>
+
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Background="#F5F7FA" BorderBrush="#D9DEE7" BorderThickness="0,0,0,1" Padding="4">
+      <StackPanel>
+        <StackPanel Orientation="Horizontal">
+          <Button Content="مبيعات  F2" Command="{Binding OpenSalesCommand}"/>
+          <Button Content="مشتريات" Command="{Binding OpenPurchaseCommand}"/>
+          <Button Content="قبض" Command="{Binding OpenReceiptCommand}"/>
+          <Button Content="صرف" Command="{Binding OpenPaymentCommand}"/>
+          <Button Content="الأصناف" Command="{Binding OpenItemsCommand}"/>
+          <Button Content="العملاء/الموردون" Command="{Binding OpenPartnersCommand}"/>
+          <Button Content="دفتر الأستاذ" Command="{Binding OpenLedgerCommand}"/>
+          <Separator Margin="8,0"/>
+          <TextBlock Text="F2 ترحيل   F3 بحث   F5 تحديث   F7 تفاصيل" VerticalAlignment="Center" Foreground="#4C5564"/>
+          <Button Content="إغلاق التبويب" Click="OnCloseTabClick" Margin="18,3,3,3"/>
+        </StackPanel>
+        <ItemsControl ItemsSource="{Binding ModuleScreens}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Content="{Binding Title}" Command="{Binding DataContext.OpenModuleScreenCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Border>
+
+    <StatusBar DockPanel.Dock="Bottom">
+      <StatusBarItem><TextBlock Text="{Binding NetworkStatus}"/></StatusBarItem>
+      <Separator/>
+      <StatusBarItem><TextBlock Text="{Binding SyncStatus}"/></StatusBarItem>
+      <Separator/>
+      <StatusBarItem><TextBlock Text="{Binding BranchName, StringFormat='الفرع: {0}'}"/></StatusBarItem>
+      <Separator/>
+      <StatusBarItem><TextBlock Text="{Binding UserName, StringFormat='المستخدم: {0}'}"/></StatusBarItem>
+    </StatusBar>
+
+    <TabControl ItemsSource="{Binding Workspace.Tabs}" SelectedItem="{Binding Workspace.SelectedTab}">
+      <TabControl.ItemTemplate>
+        <DataTemplate><TextBlock Text="{Binding Title}" Margin="8,2"/></DataTemplate>
+      </TabControl.ItemTemplate>
+      <TabControl.ContentTemplate>
+        <DataTemplate><ContentPresenter Content="{Binding ViewModel}"/></DataTemplate>
+      </TabControl.ContentTemplate>
+    </TabControl>
+  </DockPanel>
+</Window>
