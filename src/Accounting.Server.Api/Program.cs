@@ -12,7 +12,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("AccountingServer")
     ?? throw new InvalidOperationException("ConnectionStrings:AccountingServer is required.");
-var adminConnectionString = builder.Configuration.GetConnectionString("AccountingServerAdmin") ?? connectionString;
+var configuredAdminConnection = builder.Configuration.GetConnectionString("AccountingServerAdmin");
+var adminConnectionString = string.IsNullOrWhiteSpace(configuredAdminConnection) ? connectionString : configuredAdminConnection;
 var authority = builder.Configuration["Authentication:Authority"]
     ?? throw new InvalidOperationException("Authentication:Authority is required.");
 var audience = builder.Configuration["Authentication:Audience"]
