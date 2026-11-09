@@ -1,0 +1,22 @@
+name: accounting-core
+
+on:
+  push:
+    branches: [ main, accounting-core-50 ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore
+        run: dotnet restore Qodynex.Accounting.sln
+      - name: Build
+        run: dotnet build Qodynex.Accounting.sln --configuration Release --no-restore
+      - name: Test
+        run: dotnet test Qodynex.Accounting.sln --configuration Release --no-build --logger "trx;LogFileName=tests.trx"
