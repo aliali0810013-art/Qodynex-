@@ -226,16 +226,77 @@ public sealed class HomePage : ContentPage
 
 public sealed class MobileSaleLineViewModel : BindableObject
 {
+    private Guid _unitOfMeasureId;
+    private MobileUnitOption? _selectedUnit;
     private decimal _quantity = 1m;
+    private decimal _baseUnitsPerUnit = 1m;
     private decimal _unitPrice;
 
     public Guid ItemId { get; init; }
-    public Guid UnitOfMeasureId { get; init; }
     public string Sku { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
-    public decimal BaseUnitsPerUnit { get; init; } = 1m;
-    public decimal Quantity { get => _quantity; set { if (_quantity == value) return; _quantity = value; OnPropertyChanged(); OnPropertyChanged(nameof(Total)); } }
-    public decimal UnitPrice { get => _unitPrice; set { if (_unitPrice == value) return; _unitPrice = value; OnPropertyChanged(); OnPropertyChanged(nameof(Total)); } }
+    public ObservableCollection<MobileUnitOption> UnitOptions { get; } = new();
+
+    public Guid UnitOfMeasureId
+    {
+        get => _unitOfMeasureId;
+        private set
+        {
+            if (_unitOfMeasureId == value) return;
+            _unitOfMeasureId = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public MobileUnitOption? SelectedUnit
+    {
+        get => _selectedUnit;
+        set
+        {
+            if (Equals(_selectedUnit, value)) return;
+            _selectedUnit = value;
+            OnPropertyChanged();
+            if (value is null) return;
+            UnitOfMeasureId = value.UnitOfMeasureId;
+            BaseUnitsPerUnit = value.BaseUnitsPerUnit;
+        }
+    }
+
+    public decimal Quantity
+    {
+        get => _quantity;
+        set
+        {
+            if (value <= 0m || _quantity == value) return;
+            _quantity = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(Total));
+        }
+    }
+
+    public decimal BaseUnitsPerUnit
+    {
+        get => _baseUnitsPerUnit;
+        private set
+        {
+            if (value <= 0m || _baseUnitsPerUnit == value) return;
+            _baseUnitsPerUnit = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public decimal UnitPrice
+    {
+        get => _unitPrice;
+        set
+        {
+            if (value < 0m || _unitPrice == value) return;
+            _unitPrice = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(Total));
+        }
+    }
+
     public decimal Total => Quantity * UnitPrice;
 }
 
