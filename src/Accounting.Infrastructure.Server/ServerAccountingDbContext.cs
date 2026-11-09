@@ -15,6 +15,7 @@ public sealed class ServerAccountingDbContext : DbContext
 
     public DbSet<ServerCompanyPolicy> CompanyPolicies => Set<ServerCompanyPolicy>();
     public DbSet<ServerTenantProfile> TenantProfiles => Set<ServerTenantProfile>();
+    public DbSet<ServerModuleConfiguration> ModuleConfigurations => Set<ServerModuleConfiguration>();
     public DbSet<ServerAccount> Accounts => Set<ServerAccount>();
     public DbSet<ServerUnitOfMeasure> UnitOfMeasures => Set<ServerUnitOfMeasure>();
     public DbSet<ServerBusinessPartner> BusinessPartners => Set<ServerBusinessPartner>();
@@ -39,6 +40,7 @@ public sealed class ServerAccountingDbContext : DbContext
         base.OnModelCreating(modelBuilder);
         Configure<ServerCompanyPolicy>(modelBuilder, "CompanyPolicies");
         Configure<ServerTenantProfile>(modelBuilder, "TenantProfiles");
+        Configure<ServerModuleConfiguration>(modelBuilder, "ModuleConfigurations");
         Configure<ServerAccount>(modelBuilder, "Accounts");
         Configure<ServerUnitOfMeasure>(modelBuilder, "UnitOfMeasures");
         Configure<ServerBusinessPartner>(modelBuilder, "BusinessPartners");
@@ -60,6 +62,7 @@ public sealed class ServerAccountingDbContext : DbContext
 
         modelBuilder.Entity<ServerCompanyPolicy>().HasIndex(x => new { x.CompanyId, x.BranchId }).IsUnique();
         modelBuilder.Entity<ServerTenantProfile>().HasIndex(x => new { x.CompanyId, x.BranchId }).IsUnique();
+        modelBuilder.Entity<ServerModuleConfiguration>().HasIndex(x => new { x.CompanyId, x.BranchId, x.ModuleKey }).IsUnique();
         modelBuilder.Entity<ServerAccount>().HasIndex(x => new { x.CompanyId, x.BranchId, x.Code }).IsUnique();
         modelBuilder.Entity<ServerUnitOfMeasure>().HasIndex(x => new { x.CompanyId, x.BranchId, x.Code }).IsUnique();
         modelBuilder.Entity<ServerBusinessPartner>().HasIndex(x => new { x.CompanyId, x.BranchId, x.Code }).IsUnique();
@@ -100,6 +103,7 @@ public sealed class ServerAccountingDbContext : DbContext
     {
         m.Entity<ServerCompanyPolicy>().HasQueryFilter(x => _tenant.IsSystem || (x.CompanyId == _tenant.CompanyId && x.BranchId == _tenant.BranchId));
         m.Entity<ServerTenantProfile>().HasQueryFilter(x => _tenant.IsSystem || (x.CompanyId == _tenant.CompanyId && x.BranchId == _tenant.BranchId));
+        m.Entity<ServerModuleConfiguration>().HasQueryFilter(x => _tenant.IsSystem || (x.CompanyId == _tenant.CompanyId && x.BranchId == _tenant.BranchId));
         m.Entity<ServerAccount>().HasQueryFilter(x => _tenant.IsSystem || (x.CompanyId == _tenant.CompanyId && x.BranchId == _tenant.BranchId));
         m.Entity<ServerUnitOfMeasure>().HasQueryFilter(x => _tenant.IsSystem || (x.CompanyId == _tenant.CompanyId && x.BranchId == _tenant.BranchId));
         m.Entity<ServerBusinessPartner>().HasQueryFilter(x => _tenant.IsSystem || (x.CompanyId == _tenant.CompanyId && x.BranchId == _tenant.BranchId));
@@ -173,7 +177,7 @@ public sealed class ServerDatabaseBootstrapper
     {
         var tables = new[]
         {
-            "CompanyPolicies","TenantProfiles","Accounts","UnitOfMeasures","BusinessPartners","Items","Warehouses","FinancialDocuments","DocumentLines","JournalEntries","JournalLines",
+            "CompanyPolicies","TenantProfiles","ModuleConfigurations","Accounts","UnitOfMeasures","BusinessPartners","Items","Warehouses","FinancialDocuments","DocumentLines","JournalEntries","JournalLines",
             "StockLedgerEntries","InboxMessages","SequenceCounters","SyncWatermarks","DeviceRegistrations","SyncChanges",
             "AuditLogs","SyncConflicts","DocumentReversals"
         };
