@@ -14,6 +14,8 @@ public sealed class OfficialSequenceGenerator
     {
         if (_db.Database.CurrentTransaction is null)
             throw new InvalidOperationException("Official sequence allocation requires an active PostgreSQL transaction.");
+        if (companyId == Guid.Empty || branchId == Guid.Empty)
+            throw new ArgumentException("A company and branch are required for official numbering.");
         if (string.IsNullOrWhiteSpace(documentType))
             throw new ArgumentException("Document type is required.", nameof(documentType));
 
@@ -23,27 +25,36 @@ public sealed class OfficialSequenceGenerator
             $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0));",
             cancellationToken).ConfigureAwait(false);
 
-        var counter = await _db.SequenceCounters.SingleOrDefaultAsync(
-            x => x.CompanyId == companyId && x.BranchId == branchId && x.DocumentType == documentType && x.SequenceYear == year,
-            cancellationToken).ConfigureAwait(false);
+        // The unique index and UPSERT allocate numbers atomically in the same
+        // financial transaction. A rolled-back posting also rolls back the number.
+        await using var command = _db.Database.GetDbConnection().CreateCommand();
+        command.Transaction = _db.Database.CurrentTransaction.GetDbTransaction();
+        command.CommandText = """
+INSERT INTO "SequenceCounters" ("Id", "CompanyId", "BranchId", "DocumentType", "SequenceYear", "CurrentValue")
+VALUES (@id, @companyId, @branchId, @documentType, @year, 1)
+ON CONFLICT ("CompanyId", "BranchId", "DocumentType", "SequenceYear")
+DO UPDATE SET "CurrentValue" = "SequenceCounters"."CurrentValue" + 1
+RETURNING "CurrentValue";
+""";
 
-        if (counter is null)
+        void AddParameter(string name, object value)
         {
-            counter = new SequenceCounter
-            {
-                Id = UuidV7.NewGuid(),
-                CompanyId = companyId,
-                BranchId = branchId,
-                DocumentType = documentType,
-                SequenceYear = year,
-                CurrentValue = 0
-            };
-            _db.SequenceCounters.Add(counter);
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value;
+            command.Parameters.Add(parameter);
         }
 
-        checked { counter.CurrentValue++; }
-        var prefix = Prefix(documentType);
-        return new OfficialSequenceAllocation($"{prefix}-{year}-{counter.CurrentValue:000000}", counter.CurrentValue);
+        AddParameter("id", UuidV7.NewGuid());
+        AddParameter("companyId", companyId);
+        AddParameter("branchId", branchId);
+        AddParameter("documentType", documentType);
+        AddParameter("year", year);
+
+        var allocated = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+                        ?? throw new InvalidOperationException("PostgreSQL did not return an official sequence.");
+        var sequence = Convert.ToInt64(allocated, System.Globalization.CultureInfo.InvariantCulture);
+        return new OfficialSequenceAllocation($"{Prefix(documentType)}-{year}-{sequence:000000}", sequence);
     }
 
     private static string Prefix(string documentType) => documentType switch
