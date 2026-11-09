@@ -95,8 +95,8 @@ public sealed class LocalAccountingDbContext : DbContext
             b.Property(x => x.WarehouseId).HasColumnName("WarehouseId");
             b.Property(x => x.SettlementAccountId).HasColumnName("SettlementAccountId");
             b.Property(x => x.BusinessPartnerId).HasColumnName("BusinessPartnerId");
-            var nav = b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.SalesInvoiceId).OnDelete(DeleteBehavior.Restrict).Metadata;
-            nav.SetField("_lines"); nav.SetPropertyAccessMode(PropertyAccessMode.Field);
+            b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.SalesInvoiceId).OnDelete(DeleteBehavior.Restrict);
+            b.Navigation(x => x.Lines).HasField("_lines").UsePropertyAccessMode(PropertyAccessMode.Field);
         });
         Configure<SalesInvoiceLine>(m, "SalesInvoiceLines");
         m.Entity<PurchaseInvoice>(b =>
@@ -104,8 +104,8 @@ public sealed class LocalAccountingDbContext : DbContext
             b.Property(x => x.WarehouseId).HasColumnName("WarehouseId");
             b.Property(x => x.SettlementAccountId).HasColumnName("SettlementAccountId");
             b.Property(x => x.BusinessPartnerId).HasColumnName("BusinessPartnerId");
-            var nav = b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.PurchaseInvoiceId).OnDelete(DeleteBehavior.Restrict).Metadata;
-            nav.SetField("_lines"); nav.SetPropertyAccessMode(PropertyAccessMode.Field);
+            b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.PurchaseInvoiceId).OnDelete(DeleteBehavior.Restrict);
+            b.Navigation(x => x.Lines).HasField("_lines").UsePropertyAccessMode(PropertyAccessMode.Field);
         });
         Configure<PurchaseInvoiceLine>(m, "PurchaseInvoiceLines");
 
@@ -130,8 +130,8 @@ public sealed class LocalAccountingDbContext : DbContext
         {
             b.HasIndex(x => new { x.CompanyId, x.BranchId, x.IdempotencyKey }).IsUnique();
             b.HasIndex(x => new { x.CompanyId, x.BranchId, x.SourceDocumentId });
-            var nav = b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.JournalEntryId).OnDelete(DeleteBehavior.Restrict).Metadata;
-            nav.SetField("_lines"); nav.SetPropertyAccessMode(PropertyAccessMode.Field);
+            b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.JournalEntryId).OnDelete(DeleteBehavior.Restrict);
+            b.Navigation(x => x.Lines).HasField("_lines").UsePropertyAccessMode(PropertyAccessMode.Field);
         });
 
         m.Entity<Branch>().HasIndex(x => new { x.CompanyId, x.Code }).IsUnique();
