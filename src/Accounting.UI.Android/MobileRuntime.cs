@@ -169,11 +169,34 @@ public sealed class MobileRuntime : IAsyncDisposable
             : new BackgroundSyncCoordinator(_transport, SyncStore, new SystemNetworkAvailability(), UserContext, new SystemClock());
     }
 
+    public async Task ResetAsync(CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            StopSyncLoop();
+            _http?.Dispose();
+            _http = null;
+            _transport = null;
+            SyncCoordinator = null;
+            if (Db is not null) await Db.DisposeAsync().ConfigureAwait(false);
+            Db = null;
+            Facade = null!;
+            SyncStore = null!;
+            ModuleRegistry = null!;
+            EnabledModules = Array.Empty<string>();
+            CompanyName = string.Empty;
+            BranchName = string.Empty;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
-        StopSyncLoop();
-        _http?.Dispose();
-        if (Db is not null) await Db.DisposeAsync().ConfigureAwait(false);
+        await ResetAsync().ConfigureAwait(false);
         _gate.Dispose();
     }
 }
