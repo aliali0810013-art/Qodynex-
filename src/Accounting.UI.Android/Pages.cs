@@ -249,7 +249,9 @@ public sealed class SalePage : ContentPage
     private readonly Picker _settlement = new() { Title = "حساب الدفع/العميل" };
     private readonly Picker _partner = new() { Title = "العميل (اختياري)" };
     private readonly Picker _serviceType = new() { Title = "نوع خدمة المطعم" };
+    private readonly Label _tax = new() { FontSize = 15 };
     private readonly Label _total = new() { FontSize = 22, FontAttributes = FontAttributes.Bold };
+    private CompanyPolicy? _policy;
     private readonly Label _status = new() { TextColor = Colors.DarkSlateGray };
     private CancellationTokenSource? _hidDebounce;
 
@@ -341,7 +343,7 @@ public sealed class SalePage : ContentPage
                 }.Position(0,1),
                 new Label { Text = "الصنف    | الكمية | السعر", FontAttributes = FontAttributes.Bold }.Position(0,2),
                 list.Position(0,3),
-                new VerticalStackLayout { Spacing = 6, Children = { _total, post, _status } }.Position(0,4)
+                new VerticalStackLayout { Spacing = 6, Children = { _tax, _total, post, _status } }.Position(0,4)
             }
         };
 
@@ -352,6 +354,7 @@ public sealed class SalePage : ContentPage
     private async Task LoadPickersAsync()
     {
         if (_settlement.ItemsSource is not null) return;
+        _policy = await _runtime.Facade.GetPolicyAsync().ConfigureAwait(true);
         var accounts = await _runtime.Facade.GetPostableAccountsAsync().ConfigureAwait(true);
         var partners = await _runtime.Facade.GetCustomersAsync().ConfigureAwait(true);
         var warehouses = await _runtime.Facade.GetWarehousesAsync().ConfigureAwait(true);
@@ -363,6 +366,7 @@ public sealed class SalePage : ContentPage
         _warehouse.ItemDisplayBinding = new Binding(nameof(MobileWarehouse.Name));
         if (accounts.Count > 0) _settlement.SelectedIndex = 0;
         if (warehouses.Count > 0) _warehouse.SelectedIndex = 0;
+        Recalculate();
     }
 
     private async void OnBarcodeTextChanged(object? sender, TextChangedEventArgs e)
@@ -419,7 +423,40 @@ public sealed class SalePage : ContentPage
         Recalculate();
     }
 
-    private void Recalculate() => _total.Text = $"الإجمالي: {_lines.Sum(x => x.Total):N2}";
+    private void Recalculate()
+    {
+        var subtotal = _lines.Sum(x => x.Total);
+        if (_policy is null)
+        {
+            _tax.Text = "الضريبة: 0.00";
+            _total.Text = $"الإجمالي: {subtotal:N2}";
+            return;
+        }
+
+        var policy = _policy;
+        subtotal = decimal.Round(subtotal, policy.CurrencyScale, policy.RoundingMode);
+        decimal tax;
+        decimal total;
+        if (!policy.TaxPolicy.Enabled || policy.TaxPolicy.Rate == 0m)
+        {
+            tax = 0m;
+            total = subtotal;
+        }
+        else if (policy.TaxPolicy.PricesIncludeTax)
+        {
+            var net = decimal.Round(subtotal / (1m + policy.TaxPolicy.Rate), policy.CurrencyScale, policy.RoundingMode);
+            tax = decimal.Round(subtotal - net, policy.CurrencyScale, policy.RoundingMode);
+            total = subtotal;
+        }
+        else
+        {
+            tax = decimal.Round(subtotal * policy.TaxPolicy.Rate, policy.CurrencyScale, policy.RoundingMode);
+            total = decimal.Round(subtotal + tax, policy.CurrencyScale, policy.RoundingMode);
+        }
+
+        _tax.Text = $"الضريبة: {tax:N2}";
+        _total.Text = $"الإجمالي: {total:N2}";
+    }
 
     private async void PostAsync(object? sender, EventArgs e)
     {
