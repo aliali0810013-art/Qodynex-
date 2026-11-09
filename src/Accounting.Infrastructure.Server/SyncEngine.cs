@@ -100,7 +100,7 @@ public sealed class SyncPushCommandHandler
 
     private async Task<SyncAck> ProcessMessageAsync(SyncEnvelope envelope, CancellationToken cancellationToken)
     {
-        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
         await _session.ApplyAsync(cancellationToken).ConfigureAwait(false);
         await DemandActiveDeviceAsync(cancellationToken).ConfigureAwait(false);
         await AcquireIdempotencyLockAsync(envelope, cancellationToken).ConfigureAwait(false);
