@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.NetworkInformation;
 using Accounting.SharedKernel;
 
@@ -58,6 +59,11 @@ public sealed class BackgroundSyncCoordinator
                 await _local.ApplyPushResultAsync(_userContext, result, cancellationToken).ConfigureAwait(false);
                 pushed += pending.Count;
             }
+            catch (SyncTransportException ex) when (ex.StatusCodeValue == HttpStatusCode.UpgradeRequired)
+            {
+                await _local.RecordUpgradeRequiredAsync(_userContext, ex.ResponseBody, cancellationToken).ConfigureAwait(false);
+                throw new SyncClientUpgradeRequiredException("The server requires a newer schema/protocol. Local data was left unchanged.", ex);
+            }
             catch
             {
                 await _local.MarkTransportFailureAsync(_userContext, pending, _clock.UtcNow, cancellationToken).ConfigureAwait(false);
@@ -72,7 +78,16 @@ public sealed class BackgroundSyncCoordinator
         {
             var request = new SyncPullRequest(SyncProtocol.CurrentClientSchemaVersion, SyncProtocol.CurrentProtocolVersion,
                 _userContext.DeviceId, after, SyncProtocol.MaxBatchSize);
-            var result = await _transport.PullAsync(request, cancellationToken).ConfigureAwait(false);
+            SyncPullResult result;
+            try
+            {
+                result = await _transport.PullAsync(request, cancellationToken).ConfigureAwait(false);
+            }
+            catch (SyncTransportException ex) when (ex.StatusCodeValue == HttpStatusCode.UpgradeRequired)
+            {
+                await _local.RecordUpgradeRequiredAsync(_userContext, ex.ResponseBody, cancellationToken).ConfigureAwait(false);
+                throw new SyncClientUpgradeRequiredException("The server requires a newer schema/protocol. Local data was left unchanged.", ex);
+            }
             await _local.ApplyPullResultAsync(_userContext, result, cancellationToken).ConfigureAwait(false);
             pulled += result.Changes.Count;
             after = result.NextWatermark;
@@ -97,6 +112,11 @@ public sealed class BackgroundSyncCoordinator
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 break;
+            }
+            catch (SyncClientUpgradeRequiredException)
+            {
+                failures = 8;
+                await Task.Delay(TimeSpan.FromMinutes(30), cancellationToken).ConfigureAwait(false);
             }
             catch
             {
