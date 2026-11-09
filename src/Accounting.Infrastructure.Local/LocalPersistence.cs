@@ -64,16 +64,39 @@ public sealed class LocalAccountingDbContext : DbContext
 
         m.Entity<SalesInvoice>(b =>
         {
+            b.Property(x => x.WarehouseId).HasColumnName("WarehouseId");
+            b.Property(x => x.SettlementAccountId).HasColumnName("SettlementAccountId");
+            b.Property(x => x.BusinessPartnerId).HasColumnName("BusinessPartnerId");
             var nav = b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.SalesInvoiceId).OnDelete(DeleteBehavior.Restrict).Metadata;
             nav.SetField("_lines"); nav.SetPropertyAccessMode(PropertyAccessMode.Field);
         });
         Configure<SalesInvoiceLine>(m, "SalesInvoiceLines");
         m.Entity<PurchaseInvoice>(b =>
         {
+            b.Property(x => x.WarehouseId).HasColumnName("WarehouseId");
+            b.Property(x => x.SettlementAccountId).HasColumnName("SettlementAccountId");
+            b.Property(x => x.BusinessPartnerId).HasColumnName("BusinessPartnerId");
             var nav = b.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.PurchaseInvoiceId).OnDelete(DeleteBehavior.Restrict).Metadata;
             nav.SetField("_lines"); nav.SetPropertyAccessMode(PropertyAccessMode.Field);
         });
         Configure<PurchaseInvoiceLine>(m, "PurchaseInvoiceLines");
+
+        m.Entity<ReceiptVoucher>(b =>
+        {
+            b.Property(x => x.CashOrBankAccountId).HasColumnName("CashOrBankAccountId");
+            b.Property(x => x.CounterAccountId).HasColumnName("CounterAccountId");
+            b.Property(x => x.BusinessPartnerId).HasColumnName("BusinessPartnerId");
+            b.Property(x => x.Amount).HasColumnName("VoucherAmount");
+            b.Property(x => x.Description).HasColumnName("VoucherDescription");
+        });
+        m.Entity<PaymentVoucher>(b =>
+        {
+            b.Property(x => x.CashOrBankAccountId).HasColumnName("CashOrBankAccountId");
+            b.Property(x => x.CounterAccountId).HasColumnName("CounterAccountId");
+            b.Property(x => x.BusinessPartnerId).HasColumnName("BusinessPartnerId");
+            b.Property(x => x.Amount).HasColumnName("VoucherAmount");
+            b.Property(x => x.Description).HasColumnName("VoucherDescription");
+        });
 
         m.Entity<JournalEntry>(b =>
         {
@@ -197,7 +220,7 @@ public sealed class LocalDatabaseBootstrapper
     public LocalDatabaseBootstrapper(LocalAccountingDbContext db) => _db = db;
     public async Task InitializeAsync(CancellationToken ct = default)
     {
-        await _db.Database.OpenConnectionAsync(ct); try { await SqliteSchemaGuard.ApplyPragmasAsync(_db, ct); await _db.Database.EnsureCreatedAsync(ct); await SqliteSchemaGuard.ApplyTriggersAsync(_db, ct); }
+        await _db.Database.OpenConnectionAsync(ct); try { await SqliteSchemaGuard.ApplyPragmasAsync(_db, ct); await _db.Database.MigrateAsync(ct); await SqliteSchemaGuard.ApplyTriggersAsync(_db, ct); }
         finally { await _db.Database.CloseConnectionAsync(); }
     }
 }
