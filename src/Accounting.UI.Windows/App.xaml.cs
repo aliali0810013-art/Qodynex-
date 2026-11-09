@@ -13,6 +13,7 @@ namespace Accounting.UI.Windows;
 public partial class App : Application
 {
     private LocalAccountingDbContext? _db;
+    private HttpClient? _httpClient;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -27,16 +28,53 @@ public partial class App : Application
 
             var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Qodynex");
             Directory.CreateDirectory(root);
-            var dbPath = Environment.GetEnvironmentVariable("QODYNEX_SQLITE_PATH") ?? Path.Combine(root, "accounting.db");
+            var dbPath = Environment.GetEnvironmentVariable("QODYNEX_SQLITE_PATH")
+                         ?? Path.Combine(root, $"accounting-{companyId:N}-{branchId:N}.db");
             var options = new DbContextOptionsBuilder<LocalAccountingDbContext>()
                 .UseSqlite($"Data Source={dbPath}")
                 .AddInterceptors(new ImmutabilityInterceptor())
                 .Options;
             _db = new LocalAccountingDbContext(options);
             await new LocalDatabaseBootstrapper(_db).InitializeAsync().ConfigureAwait(true);
+            var localSync = new LocalSyncStore(_db);
+
+            ISyncTransport? transport = null;
+            var serverUrl = Environment.GetEnvironmentVariable("QODYNEX_SERVER_URL");
+            var token = Environment.GetEnvironmentVariable("QODYNEX_ACCESS_TOKEN");
+            if (Uri.TryCreate(serverUrl, UriKind.Absolute, out var baseUri)
+                && baseUri.Scheme == Uri.UriSchemeHttps
+                && !string.IsNullOrWhiteSpace(token))
+            {
+                _httpClient = new HttpClient { BaseAddress = baseUri, Timeout = TimeSpan.FromSeconds(30) };
+                _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                transport = new HttpSyncTransport(_httpClient);
+                try
+                {
+                    await transport.RegisterDeviceAsync(new DeviceRegistrationRequest(
+                        deviceId,
+                        Environment.GetEnvironmentVariable("QODYNEX_DEVICE_NAME") ?? Environment.MachineName,
+                        "Windows",
+                        typeof(App).Assembly.GetName().Version?.ToString() ?? "1.0.0",
+                        SyncProtocol.CurrentClientSchemaVersion,
+                        SyncProtocol.CurrentProtocolVersion)).ConfigureAwait(true);
+
+                    var bootstrap = await transport.BootstrapAsync(new TenantBootstrapRequest(
+                        SyncProtocol.CurrentClientSchemaVersion,
+                        SyncProtocol.CurrentProtocolVersion,
+                        deviceId)).ConfigureAwait(true);
+                    await localSync.ApplyBootstrapAsync(userContext, bootstrap).ConfigureAwait(true);
+                }
+                catch (Exception ex) when ((ex is HttpRequestException && ex is not SyncTransportException) || ex is TaskCanceledException)
+                {
+                    if (!await _db.Companies.AsNoTracking().AnyAsync(x => x.Id == companyId).ConfigureAwait(true))
+                        throw new InvalidOperationException("يلزم اتصال أولي ناجح بالخادم لتهيئة Windows قبل العمل دون إنترنت.", ex);
+                }
+            }
+
+            if (!await _db.Companies.AsNoTracking().AnyAsync(x => x.Id == companyId).ConfigureAwait(true))
+                throw new InvalidOperationException("لا توجد تهيئة محلية. وفر HTTPS server + JWT صالحاً لإجراء Bootstrap أول مرة.");
 
             var store = new EfAccountingDataStore(_db);
-            var uow = new SqliteUnitOfWork(_db);
             var currency = new CurrencyPolicyService();
             var inventory = new InventoryValuationEngine(currency);
             var queryService = new AccountingQueryService(store, currency, inventory);
@@ -48,27 +86,47 @@ public partial class App : Application
                 new RestaurantModule()
             };
             var registry = new ModuleRegistry(modules);
-            var enabledModules = (Environment.GetEnvironmentVariable("QODYNEX_MODULES") ?? RetailModule.ModuleKey)
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            var state = await _db.LocalSyncStates.AsNoTracking().SingleOrDefaultAsync(
+                x => x.CompanyId == companyId && x.BranchId == branchId && x.DeviceId == deviceId).ConfigureAwait(true);
+            var enabledModules = (state?.EnabledModulesCsv ?? RetailModule.ModuleKey)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => x.ToUpperInvariant())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
             _ = registry.ResolveEnabled(enabledModules);
-            var posting = new AccountingPostingEngine(store, uow, new PermissionGuard(new EfUserAuthorizationReader(_db)),
-                new DocumentPostingRuleRegistry(registry.PostingRules(enabledModules)), currency, inventory, new SystemClock());
-            var facade = new WindowsAccountingFacade(_db, posting, queryService, new LocalTempNumberGenerator(_db), userContext);
-            var localSync = new LocalSyncStore(_db);
 
-            BackgroundSyncCoordinator? coordinator = null;
-            var serverUrl = Environment.GetEnvironmentVariable("QODYNEX_SERVER_URL");
-            var token = Environment.GetEnvironmentVariable("QODYNEX_ACCESS_TOKEN");
-            if (Uri.TryCreate(serverUrl, UriKind.Absolute, out var baseUri) && !string.IsNullOrWhiteSpace(token))
-            {
-                var http = new HttpClient { BaseAddress = baseUri, Timeout = TimeSpan.FromSeconds(30) };
-                http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                coordinator = new BackgroundSyncCoordinator(new HttpSyncTransport(http), localSync,
-                    new SystemNetworkAvailability(), userContext, new SystemClock());
-            }
+            var posting = new AccountingPostingEngine(
+                store,
+                new SqliteUnitOfWork(_db),
+                new PermissionGuard(new EfUserAuthorizationReader(_db)),
+                new DocumentPostingRuleRegistry(registry.PostingRules(enabledModules)),
+                currency,
+                inventory,
+                new SystemClock());
+            var facade = new WindowsAccountingFacade(
+                _db,
+                posting,
+                queryService,
+                new LocalTempNumberGenerator(_db),
+                userContext);
 
-            var shell = new ShellViewModel(facade, localSync, userContext, registry, enabledModules,
-                Environment.GetEnvironmentVariable("QODYNEX_BRANCH_NAME") ?? branchId.ToString("N")[..8],
+            BackgroundSyncCoordinator? coordinator = transport is null
+                ? null
+                : new BackgroundSyncCoordinator(
+                    transport,
+                    localSync,
+                    new SystemNetworkAvailability(),
+                    userContext,
+                    new SystemClock());
+
+            var shell = new ShellViewModel(
+                facade,
+                localSync,
+                userContext,
+                registry,
+                enabledModules,
+                state?.BranchName ?? branchId.ToString("N")[..8],
                 Environment.GetEnvironmentVariable("QODYNEX_USER_NAME") ?? userId.ToString("N")[..8]);
             var window = new MainShellWindow(shell, coordinator);
             MainWindow = window;
@@ -83,6 +141,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _httpClient?.Dispose();
         _db?.Dispose();
         base.OnExit(e);
     }
