@@ -283,11 +283,11 @@ VALUES
 
         await _db.Database.ExecuteSqlInterpolatedAsync($"""
 INSERT INTO Documents
-(Id, CompanyId, BranchId, LocalTempNumber, ModuleKey, Status, DocumentDateUtc, PostedAtUtc, PostingOperationId,
+(Id, CompanyId, BranchId, LocalTempNumber, ModuleKey, ModuleMetadataJson, Status, DocumentDateUtc, PostedAtUtc, PostingOperationId,
  PostingIdempotencyKey, DocumentType, CashOrBankAccountId, CounterAccountId, BusinessPartnerId, VoucherAmount,
  VoucherDescription, WarehouseId, SettlementAccountId)
 VALUES
-({document.Id}, {document.CompanyId}, {document.BranchId}, {document.LocalTempNumber}, {document.ModuleKey},
+({document.Id}, {document.CompanyId}, {document.BranchId}, {document.LocalTempNumber}, {document.ModuleKey}, {document.ModuleMetadataJson},
  {(int)PostingStatus.Posted}, {document.DocumentDateUtc}, {postedAtUtc}, {journal.OperationId}, {journal.IdempotencyKey},
  {document.DocumentType}, {cash}, {counter}, {businessPartner}, {voucherAmount}, {voucherDescription}, {warehouse}, {settlement});
 """, cancellationToken).ConfigureAwait(false);
