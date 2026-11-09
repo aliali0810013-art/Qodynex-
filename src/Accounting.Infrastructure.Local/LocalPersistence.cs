@@ -42,6 +42,7 @@ public sealed class LocalAccountingDbContext : DbContext
     public DbSet<DocumentReversalRecord> DocumentReversalRecords => Set<DocumentReversalRecord>();
     public DbSet<LocalSyncState> LocalSyncStates => Set<LocalSyncState>();
     public DbSet<LocalSyncConflict> LocalSyncConflicts => Set<LocalSyncConflict>();
+    public DbSet<LocalSequenceCounter> LocalSequenceCounters => Set<LocalSequenceCounter>();
 
     protected override void OnModelCreating(ModelBuilder m)
     {
@@ -64,6 +65,12 @@ public sealed class LocalAccountingDbContext : DbContext
             b.ToTable("LocalSyncConflicts");
             b.HasKey(x => x.Id);
             b.HasIndex(x => new { x.CompanyId, x.BranchId, x.OperationId }).IsUnique();
+        });
+        m.Entity<LocalSequenceCounter>(b =>
+        {
+            b.ToTable("LocalSequenceCounters");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => new { x.CompanyId, x.BranchId, x.DeviceId, x.DocumentType }).IsUnique();
         });
 
         m.Entity<CommercialDocument>(b =>
