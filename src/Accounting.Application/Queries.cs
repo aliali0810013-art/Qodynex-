@@ -20,6 +20,7 @@ public sealed record StockPosition(
 public interface IAccountingQueryService
 {
     Task<AccountLedgerBalance> GetAccountBalanceAsync(UserContext userContext, Guid accountId, CancellationToken cancellationToken = default);
+    Task<AccountLedgerBalance> GetBusinessPartnerBalanceAsync(UserContext userContext, Guid businessPartnerId, Guid controlAccountId, CancellationToken cancellationToken = default);
     Task<StockPosition> GetStockPositionAsync(UserContext userContext, Guid itemId, Guid warehouseId, CancellationToken cancellationToken = default);
 }
 
@@ -44,6 +45,29 @@ public sealed class AccountingQueryService : IAccountingQueryService
             ?? throw new AccountingDomainException($"Account {accountId} was not found.");
 
         var lines=await _store.GetPostedJournalLinesAsync(userContext.CompanyId,userContext.BranchId,accountId,cancellationToken).ConfigureAwait(false);
+        decimal debit=0m, credit=0m;
+        foreach(var line in lines)
+        {
+            debit=_currency.Add(debit,line.Debit,policy);
+            credit=_currency.Add(credit,line.Credit,policy);
+        }
+
+        var signed=account.NormalBalance==NormalBalance.Debit
+            ? _currency.Subtract(debit,credit,policy)
+            : _currency.Subtract(credit,debit,policy);
+        return new AccountLedgerBalance(account.Id,debit,credit,signed,account.NormalBalance);
+    }
+
+    public async Task<AccountLedgerBalance> GetBusinessPartnerBalanceAsync(UserContext userContext, Guid businessPartnerId, Guid controlAccountId, CancellationToken cancellationToken = default)
+    {
+        DemandAuthenticated(userContext);
+        var policy=(await _store.GetCompanyAsync(userContext.CompanyId,cancellationToken).ConfigureAwait(false)).GetPolicy();
+        var account=(await _store.GetAccountsAsync(userContext.CompanyId,userContext.BranchId,new[]{controlAccountId},cancellationToken).ConfigureAwait(false)).SingleOrDefault()
+            ?? throw new AccountingDomainException($"Account {controlAccountId} was not found.");
+        _=await _store.GetBusinessPartnerAsync(userContext.CompanyId,userContext.BranchId,businessPartnerId,cancellationToken).ConfigureAwait(false);
+
+        var lines=await _store.GetPostedJournalLinesForBusinessPartnerAsync(
+            userContext.CompanyId,userContext.BranchId,businessPartnerId,controlAccountId,cancellationToken).ConfigureAwait(false);
         decimal debit=0m, credit=0m;
         foreach(var line in lines)
         {
