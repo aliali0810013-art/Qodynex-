@@ -42,6 +42,8 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
         _openTab = openTab;
         _isSales = isSales;
         ModuleKey = moduleKey;
+        if (string.Equals(moduleKey, RestaurantModule.ModuleKey, StringComparison.OrdinalIgnoreCase))
+            ModuleMetadataJson = "{\"serviceType\":1,\"tableOrDeliveryReference\":null}";
         SaveCommand = new AsyncRelayCommand(SaveAndPostAsync);
         SearchCommand = new AsyncRelayCommand(QuickSearchAsync);
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
