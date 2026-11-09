@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-android</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Accounting.UI.Android</RootNamespace>
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+    <ApplicationTitle>Qodynex</ApplicationTitle>
+    <ApplicationId>tech.qodynex.accounting</ApplicationId>
+    <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+    <SupportedOSPlatformVersion>24.0</SupportedOSPlatformVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Accounting.Application/Accounting.Application.csproj" />
+    <ProjectReference Include="../Accounting.Domain/Accounting.Domain.csproj" />
+    <ProjectReference Include="../Accounting.Infrastructure.Local/Accounting.Infrastructure.Local.csproj" />
+    <ProjectReference Include="../Accounting.Modules/Accounting.Modules.csproj" />
+    <ProjectReference Include="../Accounting.SharedKernel/Accounting.SharedKernel.csproj" />
+    <ProjectReference Include="../Accounting.Sync.Client/Accounting.Sync.Client.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="ZXing.Net.Maui.Controls" />
+  </ItemGroup>
+</Project>
