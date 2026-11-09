@@ -28,17 +28,47 @@ public sealed class ServerCompanyPolicy : ServerTenantEntity
         new TaxPolicy(TaxEnabled, TaxRate, PricesIncludeTax, OutputTaxAccountId, InputTaxAccountId), QuantityScale);
 }
 
+public sealed class ServerTenantProfile : ServerTenantEntity
+{
+    public string CompanyName { get; set; } = string.Empty;
+    public string BranchCode { get; set; } = string.Empty;
+    public string BranchName { get; set; } = string.Empty;
+    public string EnabledModulesCsv { get; set; } = "RETAIL";
+}
+
 public sealed class ServerAccount : ServerTenantEntity
 {
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public Guid? ParentAccountId { get; set; }
+    public AccountType AccountType { get; set; }
+    public NormalBalance NormalBalance { get; set; }
     public bool IsPostable { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+public sealed class ServerUnitOfMeasure : ServerTenantEntity
+{
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+}
+
+public sealed class ServerBusinessPartner : ServerTenantEntity
+{
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public PartnerType PartnerType { get; set; }
+    public Guid ControlAccountId { get; set; }
+    public string? Phone { get; set; }
+    public decimal CreditLimit { get; set; }
     public bool IsActive { get; set; } = true;
 }
 
 public sealed class ServerItem : ServerTenantEntity
 {
     public string Sku { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public Guid BaseUnitOfMeasureId { get; set; }
     public ItemKind ItemKind { get; set; }
     public Guid InventoryAccountId { get; set; }
     public Guid SalesRevenueAccountId { get; set; }
@@ -49,6 +79,7 @@ public sealed class ServerItem : ServerTenantEntity
 public sealed class ServerWarehouse : ServerTenantEntity
 {
     public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
     public bool? AllowNegativeStockOverride { get; set; }
 }
 
