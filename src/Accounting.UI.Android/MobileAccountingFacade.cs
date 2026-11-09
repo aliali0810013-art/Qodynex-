@@ -62,6 +62,16 @@ public sealed class MobileAccountingFacade
             .Select(x => new MobileWarehouse(x.Id, x.Code, x.Name))
             .ToListAsync(ct);
 
+    public async Task<decimal> GetSuggestedUnitPriceAsync(string moduleKey, Guid itemId, decimal baseQuantity, decimal fallback, CancellationToken ct = default)
+    {
+        if (!string.Equals(moduleKey, Accounting.Modules.WholesaleModule.ModuleKey, StringComparison.OrdinalIgnoreCase)) return fallback;
+        var json = await _db.LocalModuleConfigurations.AsNoTracking()
+            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.ModuleKey == Accounting.Modules.WholesaleModule.ModuleKey)
+            .Select(x => x.ConfigurationJson)
+            .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+        return new Accounting.Modules.WholesalePricingService().GetUnitPrice(json ?? "{}", itemId, baseQuantity, fallback);
+    }
+
     public async Task<PostingResult> PostSaleAsync(string moduleKey, string moduleMetadataJson, Guid warehouseId,
         Guid settlementAccountId, Guid? partnerId, IReadOnlyList<MobileSaleLine> lines, CancellationToken ct = default)
     {
