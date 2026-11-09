@@ -282,6 +282,7 @@ public sealed class TenantAdministrationService
                 x.InventoryAccountId, x.SalesRevenueAccountId, x.CogsAccountId, (int)x.ItemKind, x.IsActive)).ToArray(),
             request.Warehouses.Select(x => new WarehouseMasterSyncRecord(x.Id, x.Code, x.Name, x.AllowNegativeStockOverride)).ToArray(),
             request.EnabledModules.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim().ToUpperInvariant()).Distinct().ToArray(),
+            Array.Empty<string>(),
             now);
 }
 
@@ -345,6 +346,7 @@ public sealed class TenantBootstrapService
                 x.InventoryAccountId, x.SalesRevenueAccountId, x.CogsAccountId, (int)x.ItemKind, x.IsActive)).ToArray(),
             warehouses.Select(x => new WarehouseMasterSyncRecord(x.Id, x.Code, x.Name, x.AllowNegativeStockOverride)).ToArray(),
             profile.EnabledModulesCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            _tenant.RoleClaims.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray(),
             _clock.UtcNow);
     }
 }
