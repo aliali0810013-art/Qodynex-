@@ -24,3 +24,13 @@ public sealed class LocalSyncConflict
     public DateTimeOffset ServerTimestampUtc { get; set; }
     public bool IsResolved { get; set; }
 }
+
+public sealed class LocalSequenceCounter
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid BranchId { get; set; }
+    public Guid DeviceId { get; set; }
+    public string DocumentType { get; set; } = string.Empty;
+    public long CurrentValue { get; set; }
+}
