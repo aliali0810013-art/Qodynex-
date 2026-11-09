@@ -803,14 +803,6 @@ public sealed class SyncPullQueryHandler
     }
 }
 
-public sealed record DeviceRegistrationRequest(
-    Guid DeviceId,
-    string DeviceName,
-    string Platform,
-    string ClientVersion,
-    int ClientSchemaVersion,
-    string ProtocolVersion);
-
 public sealed class DeviceRegistrationService
 {
     private readonly ServerAccountingDbContext _db;
