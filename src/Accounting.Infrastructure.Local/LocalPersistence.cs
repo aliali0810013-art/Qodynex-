@@ -162,7 +162,15 @@ public static class SqliteSchemaGuard
         Trigger("StockLedgerEntries","stock_no_update","UPDATE","1 = 1","StockLedgerEntry is append-only"),
         Trigger("StockLedgerEntries","stock_no_delete","DELETE","1 = 1","StockLedgerEntry is append-only"),
         Trigger("AuditLogs","audit_no_update","UPDATE","1 = 1","AuditLog is append-only"),
-        Trigger("AuditLogs","audit_no_delete","DELETE","1 = 1","AuditLog is append-only")
+        Trigger("AuditLogs","audit_no_delete","DELETE","1 = 1","AuditLog is append-only"),
+        Trigger("DocumentReversalRecords","reversal_no_update","UPDATE","1 = 1","DocumentReversalRecord is append-only"),
+        Trigger("DocumentReversalRecords","reversal_no_delete","DELETE","1 = 1","DocumentReversalRecord is append-only"),
+        Trigger("OfficialSequenceAssignments","official_sequence_no_update","UPDATE","1 = 1","OfficialSequenceAssignment is append-only"),
+        Trigger("OfficialSequenceAssignments","official_sequence_no_delete","DELETE","1 = 1","OfficialSequenceAssignment is append-only"),
+        ChildDocumentTrigger("SalesInvoiceLines","SalesInvoiceId","sales_line_no_update_posted","UPDATE"),
+        ChildDocumentTrigger("SalesInvoiceLines","SalesInvoiceId","sales_line_no_delete_posted","DELETE"),
+        ChildDocumentTrigger("PurchaseInvoiceLines","PurchaseInvoiceId","purchase_line_no_update_posted","UPDATE"),
+        ChildDocumentTrigger("PurchaseInvoiceLines","PurchaseInvoiceId","purchase_line_no_delete_posted","DELETE")
     };
     public static async Task ApplyPragmasAsync(LocalAccountingDbContext db, CancellationToken ct = default)
     { await db.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys=ON;", ct); await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;", ct); }
@@ -173,6 +181,13 @@ BEFORE {operation} ON {table}
 WHEN {condition}
 BEGIN
  SELECT RAISE(ABORT, 'SECURITY: {message}');
+END;";
+
+    private static string ChildDocumentTrigger(string table,string foreignKey,string name,string operation) => $@"CREATE TRIGGER IF NOT EXISTS {name}
+BEFORE {operation} ON {table}
+WHEN EXISTS (SELECT 1 FROM Documents d WHERE d.Id = OLD.{foreignKey} AND d.Status = 1)
+BEGIN
+ SELECT RAISE(ABORT, 'SECURITY: Posted document line is immutable');
 END;";
 }
 
