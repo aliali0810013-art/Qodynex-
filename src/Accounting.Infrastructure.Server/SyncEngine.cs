@@ -414,6 +414,32 @@ public sealed class SyncPushCommandHandler
         var items = await _db.Items.Where(x => itemIds.Contains(x.Id)).ToListAsync(cancellationToken).ConfigureAwait(false);
         if (items.Count != itemIds.Length) throw new AccountingDomainException("One or more invoice items do not exist on the server.");
 
+        var conversions = await _db.ItemUnitConversions.AsNoTracking()
+            .Where(x => itemIds.Contains(x.ItemId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        foreach (var line in payload.Document.Lines)
+        {
+            var item = items.Single(x => x.Id == line.ItemId);
+            decimal expectedFactor;
+            if (line.UnitOfMeasureId == item.BaseUnitOfMeasureId)
+                expectedFactor = 1m;
+            else
+            {
+                var conversion = conversions.SingleOrDefault(x =>
+                    x.ItemId == line.ItemId && x.UnitOfMeasureId == line.UnitOfMeasureId);
+                if (conversion is null)
+                    throw new AccountingDomainException(
+                        $"Unit {line.UnitOfMeasureId} is not configured for item {line.ItemId}.");
+                expectedFactor = conversion.BaseUnitsPerUnit;
+            }
+
+            if (_currency.RoundQuantity(line.BaseUnitsPerUnit, policy)
+                != _currency.RoundQuantity(expectedFactor, policy))
+                throw new AccountingDomainException(
+                    $"Unit conversion factor for item {line.ItemId} and unit {line.UnitOfMeasureId} does not match authoritative master data.");
+        }
+
         var moduleKey = payload.Document.ModuleKey.Trim().ToUpperInvariant();
         if (moduleKey == "SERVICES" && items.Any(x => x.ItemKind != ItemKind.Service))
             throw new AccountingDomainException("Services module documents cannot contain stock items.");
