@@ -1009,8 +1009,63 @@ public sealed class DeviceRegistrationService
         existing.ClientSchemaVersion = request.ClientSchemaVersion;
         existing.ProtocolVersion = request.ProtocolVersion;
         existing.LastSeenAtUtc = now;
+        _db.AuditLogs.Add(new ServerAuditLog
+        {
+            CompanyId = _tenant.CompanyId,
+            BranchId = _tenant.BranchId,
+            UserId = _tenant.UserId,
+            DeviceId = _tenant.DeviceId,
+            Action = "RegisterOrRefreshDevice",
+            EntityId = existing.Id,
+            EntityType = nameof(DeviceRegistration),
+            BeforeJson = "{}",
+            AfterJson = JsonSerializer.Serialize(new
+            {
+                existing.DeviceId,
+                existing.DeviceName,
+                existing.Platform,
+                existing.ClientVersion,
+                existing.ClientSchemaVersion,
+                existing.ProtocolVersion,
+                existing.IsActive
+            }),
+            TimestampUtc = now
+        });
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         return existing;
+    }
+
+    public async Task<DeviceRegistration> SetActiveAsync(Guid deviceId, bool isActive, CancellationToken cancellationToken = default)
+    {
+        if (!_tenant.RoleClaims.Contains("tenant.admin"))
+            throw new UnauthorizedAccessException("tenant.admin permission is required to change device state.");
+
+        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        await _session.ApplyAsync(cancellationToken).ConfigureAwait(false);
+        var device = await _db.DeviceRegistrations.SingleOrDefaultAsync(
+            x => x.DeviceId == deviceId,
+            cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Device not found.");
+
+        var before = JsonSerializer.Serialize(new { device.DeviceId, device.IsActive });
+        device.IsActive = isActive;
+        device.LastSeenAtUtc = _clock.UtcNow;
+        _db.AuditLogs.Add(new ServerAuditLog
+        {
+            CompanyId = _tenant.CompanyId,
+            BranchId = _tenant.BranchId,
+            UserId = _tenant.UserId,
+            DeviceId = _tenant.DeviceId,
+            Action = isActive ? "EnableDevice" : "DisableDevice",
+            EntityId = device.Id,
+            EntityType = nameof(DeviceRegistration),
+            BeforeJson = before,
+            AfterJson = JsonSerializer.Serialize(new { device.DeviceId, device.IsActive }),
+            TimestampUtc = _clock.UtcNow
+        });
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return device;
     }
 }
