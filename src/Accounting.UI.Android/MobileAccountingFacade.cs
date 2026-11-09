@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Accounting.UI.Android;
 
 public sealed record MobileItem(Guid Id, string Sku, string Name, string? Barcode, Guid UnitOfMeasureId, ItemKind ItemKind);
+public sealed record MobileUnitOption(Guid UnitOfMeasureId, string Code, string Name, decimal BaseUnitsPerUnit);
 public sealed record MobilePartner(Guid Id, string Code, string Name, Guid ControlAccountId, decimal CreditLimit);
 public sealed record MobileAccount(Guid Id, string Code, string Name);
 public sealed record MobileWarehouse(Guid Id, string Code, string Name);
@@ -62,6 +63,31 @@ public sealed class MobileAccountingFacade
             .OrderBy(x => x.Code)
             .Select(x => new MobileWarehouse(x.Id, x.Code, x.Name))
             .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<MobileUnitOption>> GetItemUnitsAsync(Guid itemId, CancellationToken ct = default)
+    {
+        var item = await _db.Items.AsNoTracking()
+            .SingleAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.Id == itemId, ct)
+            .ConfigureAwait(false);
+        var baseUnit = await _db.UnitOfMeasures.AsNoTracking()
+            .SingleAsync(x => x.Id == item.BaseUnitOfMeasureId, ct)
+            .ConfigureAwait(false);
+        var result = new List<MobileUnitOption>
+        {
+            new(baseUnit.Id, baseUnit.Code, baseUnit.Name, 1m)
+        };
+        var conversions = await (from conversion in _db.ItemUnitConversions.AsNoTracking()
+                                 join unit in _db.UnitOfMeasures.AsNoTracking() on conversion.UnitOfMeasureId equals unit.Id
+                                 where conversion.CompanyId == _user.CompanyId
+                                       && conversion.BranchId == _user.BranchId
+                                       && conversion.ItemId == itemId
+                                       && conversion.UnitOfMeasureId != item.BaseUnitOfMeasureId
+                                 orderby conversion.BaseUnitsPerUnit
+                                 select new MobileUnitOption(unit.Id, unit.Code, unit.Name, conversion.BaseUnitsPerUnit))
+            .ToListAsync(ct).ConfigureAwait(false);
+        result.AddRange(conversions);
+        return result;
+    }
 
     public async Task<CompanyPolicy> GetPolicyAsync(CancellationToken ct = default) =>
         (await _db.Companies.AsNoTracking().SingleAsync(x => x.Id == _user.CompanyId, ct).ConfigureAwait(false)).GetPolicy();
