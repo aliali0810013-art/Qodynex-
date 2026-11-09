@@ -59,6 +59,18 @@ public sealed class IntegrationTests
     }
 
     [Fact]
+    public async Task Raw_SQL_Trigger_Blocks_Changing_Line_Of_Posted_Invoice()
+    {
+        await using var t=await TestDatabase.CreateAsync();
+        var p=await t.Purchase("LOC-1",10m,100m);
+        await t.Engine.PostPurchaseInvoiceAsync(new(p.Id,t.Context("posted-line-guard")));
+        t.Db.ChangeTracker.Clear();
+        var line=await t.Db.PurchaseInvoiceLines.AsNoTracking().SingleAsync(x=>x.PurchaseInvoiceId==p.Id);
+        var ex=await Assert.ThrowsAsync<SqliteException>(()=>t.Db.Database.ExecuteSqlInterpolatedAsync($"UPDATE PurchaseInvoiceLines SET Quantity = {11m} WHERE Id = {line.Id}"));
+        Assert.Contains("SECURITY",ex.Message,StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Reversal_Restores_Stock_Without_Deleting_Original()
     {
         await using var t=await TestDatabase.CreateAsync();
