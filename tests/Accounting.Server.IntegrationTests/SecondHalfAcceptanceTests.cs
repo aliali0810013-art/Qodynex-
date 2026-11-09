@@ -207,7 +207,8 @@ public sealed class SecondHalfAcceptanceTests
             await using var tx = await tenant.Db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             await tenant.Session.ApplyAsync();
             var result = await new OfficialSequenceGenerator(tenant.Db)
-                .NextAsync(nameof(SalesInvoice), clock.UtcNow);
+                .NextAsync(companyId, branchId, nameof(SalesInvoice), clock.UtcNow);
+            await tenant.Db.SaveChangesAsync();
             await tx.CommitAsync();
             return result;
         }).ToArray();
