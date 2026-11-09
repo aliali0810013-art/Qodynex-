@@ -38,6 +38,6 @@ public sealed class LocalTempNumberGenerator
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         var device = userContext.DeviceId.ToString("N")[..6].ToUpperInvariant();
-        return $"LOC-{device}-{counter.CurrentValue:000000}";
+        return $"LOC-{userContext.DeviceId:N}-{documentType.ToUpperInvariant()}-{counter.CurrentValue:000000}";
     }
 }
