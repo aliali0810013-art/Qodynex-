@@ -63,7 +63,23 @@ public sealed class ServerFinancialDocument : ServerTenantEntity
     public Guid OperationId { get; set; }
     public string IdempotencyKey { get; set; } = string.Empty;
     public Guid SourceDeviceId { get; set; }
+    public Guid? BusinessPartnerId { get; set; }
+    public Guid? WarehouseId { get; set; }
+    public Guid? PrimaryAccountId { get; set; }
+    public Guid? CounterAccountId { get; set; }
+    public decimal? Amount { get; set; }
+    public string? Description { get; set; }
     public DateTimeOffset ServerTimestampUtc { get; set; }
+}
+
+public sealed class ServerDocumentLine : ServerTenantEntity
+{
+    public Guid DocumentId { get; set; }
+    public Guid ItemId { get; set; }
+    public Guid UnitOfMeasureId { get; set; }
+    public decimal Quantity { get; set; }
+    public decimal BaseUnitsPerUnit { get; set; }
+    public decimal UnitPrice { get; set; }
 }
 
 public sealed class ServerJournalEntry : ServerTenantEntity
