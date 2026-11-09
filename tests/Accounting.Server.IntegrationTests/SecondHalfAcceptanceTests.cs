@@ -190,6 +190,49 @@ public sealed class SecondHalfAcceptanceTests
         Assert.Equal(0, await wholesale.Db.JournalEntries.CountAsync(x => x.SourceDocumentType == nameof(SalesInvoice)));
     }
 
+    [Fact]
+    public void Wholesale_Price_Tiers_Select_Highest_Applicable_Quantity_Band()
+    {
+        var itemId = Guid.NewGuid();
+        var json = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            priceTiers = new[]
+            {
+                new { itemId, minBaseQuantity = 10m, unitPrice = 90m },
+                new { itemId, minBaseQuantity = 50m, unitPrice = 80m }
+            }
+        });
+
+        var pricing = new WholesalePricingService();
+        Assert.Equal(100m, pricing.GetUnitPrice(json, itemId, 5m, 100m));
+        Assert.Equal(90m, pricing.GetUnitPrice(json, itemId, 10m, 100m));
+        Assert.Equal(80m, pricing.GetUnitPrice(json, itemId, 75m, 100m));
+    }
+
+    [Fact]
+    public async Task Protocol_Mismatch_Is_Rejected_Before_Server_Writes()
+    {
+        var database = await PostgresTestDatabase.ResetAsync();
+        await using var server = database.CreateTenant();
+        await server.ConfigureDefaultAsync();
+        await server.RegisterAsync();
+
+        var request = new SyncPullRequest(
+            SyncProtocol.CurrentClientSchemaVersion + 1,
+            "999.0",
+            server.DeviceId,
+            0,
+            10);
+
+        await Assert.ThrowsAsync<SyncProtocolMismatchException>(() => server.Pull.HandleAsync(request));
+
+        await using var tx = await server.Db.Database.BeginTransactionAsync();
+        await server.Session.ApplyAsync();
+        Assert.Equal(0, await server.Db.FinancialDocuments.CountAsync());
+        Assert.Equal(0, await server.Db.InboxMessages.CountAsync());
+        await tx.CommitAsync();
+    }
+
     private sealed class AlwaysOnlineNetwork : INetworkAvailability
     {
         public Task<bool> IsNetworkAvailableAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
