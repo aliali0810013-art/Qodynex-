@@ -18,7 +18,7 @@ public sealed class MobileSessionSettings
     public Guid BranchId { get => ReadGuid(nameof(BranchId)); set => Preferences.Default.Set(nameof(BranchId), value.ToString("D")); }
     public Guid UserId { get => ReadGuid(nameof(UserId)); set => Preferences.Default.Set(nameof(UserId), value.ToString("D")); }
     public Guid DeviceId { get => ReadGuid(nameof(DeviceId)); set => Preferences.Default.Set(nameof(DeviceId), value.ToString("D")); }
-    public string DeviceName { get => Preferences.Default.Get(nameof(DeviceName), $"{DeviceInfo.Manufacturer} {DeviceInfo.Model}"); set => Preferences.Default.Set(nameof(DeviceName), value.Trim()); }
+    public string DeviceName { get => Preferences.Default.Get(nameof(DeviceName), $"{DeviceInfo.Current.Manufacturer} {DeviceInfo.Current.Model}"); set => Preferences.Default.Set(nameof(DeviceName), value.Trim()); }
 
     public bool HasIdentity => CompanyId != Guid.Empty && BranchId != Guid.Empty && UserId != Guid.Empty && DeviceId != Guid.Empty;
     public bool HasServer => Uri.TryCreate(ServerUrl, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps;
@@ -47,7 +47,7 @@ public sealed class MobileRuntime : IAsyncDisposable
     public IReadOnlyList<string> EnabledModules { get; private set; } = Array.Empty<string>();
     public string CompanyName { get; private set; } = string.Empty;
     public string BranchName { get; private set; } = string.Empty;
-    public bool IsInitialized => Db is not null;
+    public bool IsInitialized => Facade is not null;
 
     public MobileRuntime(MobileSessionSettings settings) => _settings = settings;
 
@@ -60,14 +60,17 @@ public sealed class MobileRuntime : IAsyncDisposable
             if (!_settings.HasIdentity) throw new InvalidOperationException("هوية الشركة/الفرع/المستخدم/الجهاز غير مهيأة.");
 
             UserContext = UserContext.Authenticated(_settings.UserId, _settings.CompanyId, _settings.BranchId, _settings.DeviceId);
-            var path = Path.Combine(FileSystem.AppDataDirectory, $"qodynex-{_settings.CompanyId:N}-{_settings.BranchId:N}.db");
-            var options = new DbContextOptionsBuilder<LocalAccountingDbContext>()
-                .UseSqlite($"Data Source={path}")
-                .AddInterceptors(new ImmutabilityInterceptor())
-                .Options;
-            Db = new LocalAccountingDbContext(options);
-            await new LocalDatabaseBootstrapper(Db).InitializeAsync(cancellationToken).ConfigureAwait(false);
-            SyncStore = new LocalSyncStore(Db);
+            if (Db is null)
+            {
+                var path = Path.Combine(FileSystem.AppDataDirectory, $"qodynex-{_settings.CompanyId:N}-{_settings.BranchId:N}.db");
+                var options = new DbContextOptionsBuilder<LocalAccountingDbContext>()
+                    .UseSqlite($"Data Source={path}")
+                    .AddInterceptors(new ImmutabilityInterceptor())
+                    .Options;
+                Db = new LocalAccountingDbContext(options);
+                await new LocalDatabaseBootstrapper(Db).InitializeAsync(cancellationToken).ConfigureAwait(false);
+                SyncStore = new LocalSyncStore(Db);
+            }
 
             var token = await _settings.GetAccessTokenAsync().ConfigureAwait(false);
             if (_settings.HasServer && !string.IsNullOrWhiteSpace(token))
