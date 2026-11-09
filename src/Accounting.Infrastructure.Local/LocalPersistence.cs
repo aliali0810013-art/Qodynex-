@@ -124,11 +124,21 @@ public sealed class LocalAccountingDbContext : DbContext
         m.Entity<DocumentReversalRecord>().HasIndex(x => new { x.CompanyId, x.BranchId, x.SourceDocumentId }).IsUnique();
         m.Entity<DocumentReversalRecord>().HasIndex(x => new { x.CompanyId, x.BranchId, x.IdempotencyKey }).IsUnique();
 
-        foreach (var type in new[] { typeof(SalesInvoiceLine), typeof(PurchaseInvoiceLine), typeof(ItemUnitConversion), typeof(JournalLine), typeof(StockLedgerEntry), typeof(Company) })
-        {
-            foreach (var property in m.Entity(type).Metadata.GetProperties().Where(x => x.ClrType == typeof(decimal)))
-                property.SetPrecision(38);
-        }
+        m.Entity<Company>().Property(x => x.TaxRate).HasPrecision(38, 12);
+        m.Entity<ItemUnitConversion>().Property(x => x.BaseUnitsPerUnit).HasPrecision(38, 12);
+        m.Entity<SalesInvoiceLine>().Property(x => x.Quantity).HasPrecision(38, 12);
+        m.Entity<SalesInvoiceLine>().Property(x => x.BaseUnitsPerUnit).HasPrecision(38, 12);
+        m.Entity<SalesInvoiceLine>().Property(x => x.UnitPrice).HasPrecision(38, 12);
+        m.Entity<PurchaseInvoiceLine>().Property(x => x.Quantity).HasPrecision(38, 12);
+        m.Entity<PurchaseInvoiceLine>().Property(x => x.BaseUnitsPerUnit).HasPrecision(38, 12);
+        m.Entity<PurchaseInvoiceLine>().Property(x => x.UnitPrice).HasPrecision(38, 12);
+        m.Entity<ReceiptVoucher>().Property(x => x.Amount).HasPrecision(38, 12);
+        m.Entity<PaymentVoucher>().Property(x => x.Amount).HasPrecision(38, 12);
+        m.Entity<JournalLine>().Property(x => x.Debit).HasPrecision(38, 12);
+        m.Entity<JournalLine>().Property(x => x.Credit).HasPrecision(38, 12);
+        m.Entity<StockLedgerEntry>().Property(x => x.QuantityDelta).HasPrecision(38, 12);
+        m.Entity<StockLedgerEntry>().Property(x => x.InventoryValueDelta).HasPrecision(38, 12);
+        m.Entity<StockLedgerEntry>().Property(x => x.UnitCost).HasPrecision(38, 12);
     }
 
     private static void Configure<TEntity>(ModelBuilder m, string table) where TEntity : TenantEntity
