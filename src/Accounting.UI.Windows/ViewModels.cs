@@ -159,6 +159,7 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
                 return;
             }
 
+            var suggestedPrice = await _facade.GetSuggestedUnitPriceAsync(ModuleKey, item.Id, 1m, 0m, cancellationToken).ConfigureAwait(false);
             await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 var existing = Lines.FirstOrDefault(x => x.ItemId == item.Id);
@@ -166,7 +167,6 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
                     existing.Quantity += 1m;
                 else
                 {
-                    var suggestedPrice = await _facade.GetSuggestedUnitPriceAsync(ModuleKey, item.Id, 1m, 0m, cancellationToken).ConfigureAwait(false);
                     var line = new InvoiceLineViewModel
                     {
                         ItemId = item.Id,
