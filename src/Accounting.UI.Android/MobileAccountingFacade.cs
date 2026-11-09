@@ -1,3 +1,4 @@
+using System.Data;
 using Accounting.Application;
 using Accounting.Domain;
 using Accounting.Infrastructure.Local;
@@ -79,30 +80,52 @@ public sealed class MobileAccountingFacade
         Guid settlementAccountId, Guid? partnerId, IReadOnlyList<MobileSaleLine> lines, CancellationToken ct = default)
     {
         if (lines.Count == 0) throw new InvalidOperationException("الفاتورة لا تحتوي أصنافاً.");
-        var number = await _numbers.NextAsync(_user, nameof(SalesInvoice), ct).ConfigureAwait(false);
-        var invoice = new SalesInvoice(_user.CompanyId, _user.BranchId, number, moduleKey, DateTimeOffset.UtcNow,
-            warehouseId, settlementAccountId, partnerId);
-        invoice.SetModuleMetadata(moduleMetadataJson);
-        foreach (var line in lines)
-            invoice.AddLine(line.ItemId, line.UnitOfMeasureId, line.Quantity, line.BaseUnitsPerUnit, line.UnitPrice);
-        _db.SalesInvoices.Add(invoice);
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-        return await _posting.PostSalesInvoiceAsync(new PostSalesInvoiceCommand(invoice.Id,
-            new PostingCommandContext(_user, UuidV7.NewGuid(), $"mobile-sale:{invoice.Id:N}")), ct).ConfigureAwait(false);
+        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct).ConfigureAwait(false);
+        try
+        {
+            var number = await _numbers.NextAsync(_user, nameof(SalesInvoice), ct).ConfigureAwait(false);
+            var invoice = new SalesInvoice(_user.CompanyId, _user.BranchId, number, moduleKey, DateTimeOffset.UtcNow,
+                warehouseId, settlementAccountId, partnerId);
+            invoice.SetModuleMetadata(moduleMetadataJson);
+            foreach (var line in lines)
+                invoice.AddLine(line.ItemId, line.UnitOfMeasureId, line.Quantity, line.BaseUnitsPerUnit, line.UnitPrice);
+            _db.SalesInvoices.Add(invoice);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            var result = await _posting.PostSalesInvoiceAsync(new PostSalesInvoiceCommand(invoice.Id,
+                new PostingCommandContext(_user, UuidV7.NewGuid(), $"mobile-sale:{invoice.Id:N}")), ct).ConfigureAwait(false);
+            await tx.CommitAsync(ct).ConfigureAwait(false);
+            return result;
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
     }
 
     public async Task<PostingResult> CollectAsync(Guid customerId, Guid cashAccountId, decimal amount, string description, CancellationToken ct = default)
     {
-        var partner = await _db.BusinessPartners.AsNoTracking()
-            .SingleAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.Id == customerId, ct)
-            .ConfigureAwait(false);
-        var number = await _numbers.NextAsync(_user, nameof(ReceiptVoucher), ct).ConfigureAwait(false);
-        var voucher = new ReceiptVoucher(_user.CompanyId, _user.BranchId, number, "CORE", DateTimeOffset.UtcNow,
-            cashAccountId, partner.ControlAccountId, amount, description, customerId);
-        _db.ReceiptVouchers.Add(voucher);
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-        return await _posting.PostReceiptVoucherAsync(new PostReceiptVoucherCommand(voucher.Id,
-            new PostingCommandContext(_user, UuidV7.NewGuid(), $"mobile-receipt:{voucher.Id:N}")), ct).ConfigureAwait(false);
+        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct).ConfigureAwait(false);
+        try
+        {
+            var partner = await _db.BusinessPartners.AsNoTracking()
+                .SingleAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.Id == customerId, ct)
+                .ConfigureAwait(false);
+            var number = await _numbers.NextAsync(_user, nameof(ReceiptVoucher), ct).ConfigureAwait(false);
+            var voucher = new ReceiptVoucher(_user.CompanyId, _user.BranchId, number, "CORE", DateTimeOffset.UtcNow,
+                cashAccountId, partner.ControlAccountId, amount, description, customerId);
+            _db.ReceiptVouchers.Add(voucher);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            var result = await _posting.PostReceiptVoucherAsync(new PostReceiptVoucherCommand(voucher.Id,
+                new PostingCommandContext(_user, UuidV7.NewGuid(), $"mobile-receipt:{voucher.Id:N}")), ct).ConfigureAwait(false);
+            await tx.CommitAsync(ct).ConfigureAwait(false);
+            return result;
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
     }
 
     public async Task<(decimal Balance, IReadOnlyList<MobileStatementRow> Rows)> GetCustomerStatementAsync(Guid customerId, CancellationToken ct = default)
