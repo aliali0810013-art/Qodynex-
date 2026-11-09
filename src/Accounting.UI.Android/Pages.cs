@@ -189,10 +189,12 @@ public sealed class HomePage : ContentPage
                     },
                     new Label { Text = "العمليات الميدانية", FontAttributes = FontAttributes.Bold, Margin = new Thickness(0,8,0,0) },
                     _moduleButtons,
-                    collect, statement, inventory, conflicts, sync
+                    collect, statement, conflicts, sync
                 }
             }
         };
+        if (runtime.ModuleRegistry.IsFeatureEnabled(runtime.EnabledModules, "inventory.stock"))
+            ((VerticalStackLayout)((ScrollView)Content).Content).Children.Insert(8, inventory);
 
         Appearing += async (_, _) => await RefreshStatusAsync();
     }
