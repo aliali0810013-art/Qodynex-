@@ -5,6 +5,7 @@
     <RootNamespace>Accounting.UI.Android</RootNamespace>
     <UseMaui>true</UseMaui>
     <SingleProject>true</SingleProject>
+    <AndroidManifest>Platforms/Android/AndroidManifest.xml</AndroidManifest>
     <ApplicationTitle>Qodynex</ApplicationTitle>
     <ApplicationId>tech.qodynex.accounting</ApplicationId>
     <ApplicationDisplayVersion>1.0.0</ApplicationDisplayVersion>
