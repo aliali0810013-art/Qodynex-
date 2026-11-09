@@ -14,7 +14,10 @@ public sealed class ServerAccountingDbContext : DbContext
     }
 
     public DbSet<ServerCompanyPolicy> CompanyPolicies => Set<ServerCompanyPolicy>();
+    public DbSet<ServerTenantProfile> TenantProfiles => Set<ServerTenantProfile>();
     public DbSet<ServerAccount> Accounts => Set<ServerAccount>();
+    public DbSet<ServerUnitOfMeasure> UnitOfMeasures => Set<ServerUnitOfMeasure>();
+    public DbSet<ServerBusinessPartner> BusinessPartners => Set<ServerBusinessPartner>();
     public DbSet<ServerItem> Items => Set<ServerItem>();
     public DbSet<ServerWarehouse> Warehouses => Set<ServerWarehouse>();
     public DbSet<ServerFinancialDocument> FinancialDocuments => Set<ServerFinancialDocument>();
@@ -35,7 +38,10 @@ public sealed class ServerAccountingDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
         Configure<ServerCompanyPolicy>(modelBuilder, "CompanyPolicies");
+        Configure<ServerTenantProfile>(modelBuilder, "TenantProfiles");
         Configure<ServerAccount>(modelBuilder, "Accounts");
+        Configure<ServerUnitOfMeasure>(modelBuilder, "UnitOfMeasures");
+        Configure<ServerBusinessPartner>(modelBuilder, "BusinessPartners");
         Configure<ServerItem>(modelBuilder, "Items");
         Configure<ServerWarehouse>(modelBuilder, "Warehouses");
         Configure<ServerFinancialDocument>(modelBuilder, "FinancialDocuments");
@@ -53,7 +59,10 @@ public sealed class ServerAccountingDbContext : DbContext
         Configure<ServerDocumentReversal>(modelBuilder, "DocumentReversals");
 
         modelBuilder.Entity<ServerCompanyPolicy>().HasIndex(x => new { x.CompanyId, x.BranchId }).IsUnique();
+        modelBuilder.Entity<ServerTenantProfile>().HasIndex(x => new { x.CompanyId, x.BranchId }).IsUnique();
         modelBuilder.Entity<ServerAccount>().HasIndex(x => new { x.CompanyId, x.BranchId, x.Code }).IsUnique();
+        modelBuilder.Entity<ServerUnitOfMeasure>().HasIndex(x => new { x.CompanyId, x.BranchId, x.Code }).IsUnique();
+        modelBuilder.Entity<ServerBusinessPartner>().HasIndex(x => new { x.CompanyId, x.BranchId, x.Code }).IsUnique();
         modelBuilder.Entity<ServerItem>().HasIndex(x => new { x.CompanyId, x.BranchId, x.Sku }).IsUnique();
         modelBuilder.Entity<ServerWarehouse>().HasIndex(x => new { x.CompanyId, x.BranchId, x.Code }).IsUnique();
         modelBuilder.Entity<ServerFinancialDocument>().HasIndex(x => new { x.CompanyId, x.BranchId, x.OfficialSequenceNumber }).IsUnique();
@@ -73,6 +82,7 @@ public sealed class ServerAccountingDbContext : DbContext
         modelBuilder.Entity<ServerDocumentReversal>().HasIndex(x => new { x.CompanyId, x.BranchId, x.IdempotencyKey }).IsUnique();
 
         modelBuilder.Entity<ServerCompanyPolicy>().Property(x => x.TaxRate).HasPrecision(38, 12);
+        modelBuilder.Entity<ServerBusinessPartner>().Property(x => x.CreditLimit).HasPrecision(38, 12);
         modelBuilder.Entity<ServerFinancialDocument>().Property(x => x.Amount).HasPrecision(38, 12);
         modelBuilder.Entity<ServerDocumentLine>().Property(x => x.Quantity).HasPrecision(38, 12);
         modelBuilder.Entity<ServerDocumentLine>().Property(x => x.BaseUnitsPerUnit).HasPrecision(38, 12);
@@ -89,7 +99,10 @@ public sealed class ServerAccountingDbContext : DbContext
     private void ApplyTenantFilters(ModelBuilder m)
     {
         m.Entity<ServerCompanyPolicy>().HasQueryFilter(x => _tenant.IsSystem || (x.CompanyId == _tenant.CompanyId && x.BranchId == _tenant.BranchId));
+        m.Entity<ServerTenantProfile>().HasQueryFilter(x => _tenant.IsSystem || (x.CompanyId == _tenant.CompanyId && x.BranchId == _tenant.BranchId));
         m.Entity<ServerAccount>().HasQueryFilter(x => _tenant.IsSystem || (x.CompanyId == _tenant.CompanyId && x.BranchId == _tenant.BranchId));
+        m.Entity<ServerUnitOfMeasure>().HasQueryFilter(x => _tenant.IsSystem || (x.CompanyId == _tenant.CompanyId && x.BranchId == _tenant.BranchId));
+        m.Entity<ServerBusinessPartner>().HasQueryFilter(x => _tenant.IsSystem || (x.CompanyId == _tenant.CompanyId && x.BranchId == _tenant.BranchId));
         m.Entity<ServerItem>().HasQueryFilter(x => _tenant.IsSystem || (x.CompanyId == _tenant.CompanyId && x.BranchId == _tenant.BranchId));
         m.Entity<ServerWarehouse>().HasQueryFilter(x => _tenant.IsSystem || (x.CompanyId == _tenant.CompanyId && x.BranchId == _tenant.BranchId));
         m.Entity<ServerFinancialDocument>().HasQueryFilter(x => _tenant.IsSystem || (x.CompanyId == _tenant.CompanyId && x.BranchId == _tenant.BranchId));
@@ -160,7 +173,7 @@ public sealed class ServerDatabaseBootstrapper
     {
         var tables = new[]
         {
-            "CompanyPolicies","Accounts","Items","Warehouses","FinancialDocuments","DocumentLines","JournalEntries","JournalLines",
+            "CompanyPolicies","TenantProfiles","Accounts","UnitOfMeasures","BusinessPartners","Items","Warehouses","FinancialDocuments","DocumentLines","JournalEntries","JournalLines",
             "StockLedgerEntries","InboxMessages","SequenceCounters","SyncWatermarks","DeviceRegistrations","SyncChanges",
             "AuditLogs","SyncConflicts","DocumentReversals"
         };
