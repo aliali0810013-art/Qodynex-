@@ -65,6 +65,7 @@ public sealed record ItemMasterSyncRecord(
     Guid Id,
     string Sku,
     string Name,
+    string? Barcode,
     Guid BaseUnitOfMeasureId,
     Guid InventoryAccountId,
     Guid SalesRevenueAccountId,
