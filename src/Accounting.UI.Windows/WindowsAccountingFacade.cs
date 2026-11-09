@@ -45,7 +45,7 @@ public sealed class WindowsAccountingFacade
         if (value.Length == 0) return null;
         return await _db.Items.AsNoTracking()
             .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive && (x.Sku == value || x.Barcode == value))
-            .Select(x => new ItemLookup(x.Id, x.Sku, x.Name, x.BaseUnitOfMeasureId, x.ItemKind))
+            .Select(x => new ItemLookup(x.Id, x.Sku, x.Name, x.Barcode, x.BaseUnitOfMeasureId, x.ItemKind))
             .SingleOrDefaultAsync(ct).ConfigureAwait(false);
     }
 
