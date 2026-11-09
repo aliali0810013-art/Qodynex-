@@ -99,6 +99,7 @@ public sealed class MobileAccountingFacade
         catch
         {
             await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            _db.ChangeTracker.Clear();
             throw;
         }
     }
@@ -124,6 +125,7 @@ public sealed class MobileAccountingFacade
         catch
         {
             await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            _db.ChangeTracker.Clear();
             throw;
         }
     }
