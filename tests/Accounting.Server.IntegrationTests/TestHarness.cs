@@ -39,12 +39,12 @@ internal sealed class PostgresTestDatabase
         await new ServerDatabaseBootstrapper(db).InitializeAsync();
 
         await db.Database.ExecuteSqlRawAsync("""
-DO $
+DO $role$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'qodynex_app') THEN
         CREATE ROLE qodynex_app LOGIN PASSWORD 'qodynex';
     END IF;
-END $;
+END $role$;
 ALTER ROLE qodynex_app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD 'qodynex';
 GRANT USAGE ON SCHEMA public TO qodynex_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO qodynex_app;
