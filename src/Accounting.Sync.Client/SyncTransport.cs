@@ -12,6 +12,11 @@ public interface ISyncTransport
     Task<DeviceRegistrationResult> RegisterDeviceAsync(DeviceRegistrationRequest request, CancellationToken cancellationToken = default);
 }
 
+public sealed class SyncClientUpgradeRequiredException : InvalidOperationException
+{
+    public SyncClientUpgradeRequiredException(string message, Exception innerException) : base(message, innerException) { }
+}
+
 public sealed class SyncTransportException : HttpRequestException
 {
     public HttpStatusCode StatusCodeValue { get; }
