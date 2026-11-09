@@ -138,13 +138,15 @@ public sealed class BusinessPartner : TenantEntity
     public PartnerType PartnerType { get; private set; }
     public Guid ControlAccountId { get; private set; }
     public string? Phone { get; private set; }
+    public decimal CreditLimit { get; private set; }
     public bool IsActive { get; private set; }
     private BusinessPartner() { }
-    public BusinessPartner(Guid companyId, Guid branchId, string code, string name, PartnerType partnerType, Guid controlAccountId, string? phone = null) : base(companyId, branchId)
+    public BusinessPartner(Guid companyId, Guid branchId, string code, string name, PartnerType partnerType, Guid controlAccountId, string? phone = null, decimal creditLimit = 0m) : base(companyId, branchId)
     {
+        if (creditLimit < 0m) throw new AccountingDomainException("Credit limit cannot be negative.");
         Code = string.IsNullOrWhiteSpace(code) ? throw new AccountingDomainException("Partner code is required.") : code.Trim();
         Name = string.IsNullOrWhiteSpace(name) ? throw new AccountingDomainException("Partner name is required.") : name.Trim();
-        PartnerType = partnerType; ControlAccountId = controlAccountId; Phone = phone?.Trim(); IsActive = true;
+        PartnerType = partnerType; ControlAccountId = controlAccountId; Phone = phone?.Trim(); CreditLimit = creditLimit; IsActive = true;
     }
 }
 
@@ -168,13 +170,17 @@ public sealed class Item : TenantEntity
     public Guid InventoryAccountId { get; private set; }
     public Guid SalesRevenueAccountId { get; private set; }
     public Guid CogsAccountId { get; private set; }
+    public ItemKind ItemKind { get; private set; }
     public bool IsActive { get; private set; }
     private Item() { }
-    public Item(Guid companyId, Guid branchId, string sku, string name, Guid baseUnitOfMeasureId, Guid inventoryAccountId, Guid salesRevenueAccountId, Guid cogsAccountId) : base(companyId, branchId)
+    public Item(Guid companyId, Guid branchId, string sku, string name, Guid baseUnitOfMeasureId, Guid inventoryAccountId, Guid salesRevenueAccountId, Guid cogsAccountId, ItemKind itemKind = ItemKind.Stock) : base(companyId, branchId)
     {
         Sku = string.IsNullOrWhiteSpace(sku) ? throw new AccountingDomainException("SKU is required.") : sku.Trim();
         Name = string.IsNullOrWhiteSpace(name) ? throw new AccountingDomainException("Item name is required.") : name.Trim();
-        BaseUnitOfMeasureId = baseUnitOfMeasureId; InventoryAccountId = inventoryAccountId; SalesRevenueAccountId = salesRevenueAccountId; CogsAccountId = cogsAccountId; IsActive = true;
+        if (itemKind == ItemKind.Stock && (inventoryAccountId == Guid.Empty || cogsAccountId == Guid.Empty))
+            throw new AccountingDomainException("Stock items require inventory and COGS accounts.");
+        if (salesRevenueAccountId == Guid.Empty) throw new AccountingDomainException("Sales revenue account is required.");
+        BaseUnitOfMeasureId = baseUnitOfMeasureId; InventoryAccountId = inventoryAccountId; SalesRevenueAccountId = salesRevenueAccountId; CogsAccountId = cogsAccountId; ItemKind = itemKind; IsActive = true;
     }
 }
 
@@ -456,7 +462,28 @@ public sealed class OutboxMessage : TenantEntity
     private OutboxMessage() { }
     public OutboxMessage(Guid companyId, Guid branchId, Guid operationId, string key, string payload, string eventType, DateTimeOffset createdAt) : base(companyId, branchId)
     {
-        OperationId = operationId; IdempotencyKey = key; PayloadJson = payload; EventType = eventType; Status = OutboxStatus.Pending; CreatedAtUtc = createdAt;
+        if (string.IsNullOrWhiteSpace(key)) throw new AccountingDomainException("Outbox idempotency key is required.");
+        if (string.IsNullOrWhiteSpace(payload)) throw new AccountingDomainException("Outbox payload is required.");
+        OperationId = operationId; IdempotencyKey = key.Trim(); PayloadJson = payload; EventType = eventType; Status = OutboxStatus.Pending; CreatedAtUtc = createdAt;
+    }
+
+    public void MarkProcessed(DateTimeOffset attemptedAtUtc)
+    {
+        LastAttemptAtUtc = attemptedAtUtc;
+        Status = OutboxStatus.Processed;
+    }
+
+    public void MarkFailed(DateTimeOffset attemptedAtUtc)
+    {
+        LastAttemptAtUtc = attemptedAtUtc;
+        RetryCount++;
+        Status = OutboxStatus.Failed;
+    }
+
+    public void MarkPendingForRetry()
+    {
+        if (Status == OutboxStatus.Processed) throw new AccountingDomainException("Processed outbox messages cannot be retried.");
+        Status = OutboxStatus.Pending;
     }
 }
 
