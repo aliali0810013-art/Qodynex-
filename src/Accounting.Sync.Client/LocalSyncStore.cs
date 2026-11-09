@@ -153,11 +153,11 @@ ON CONFLICT(Id) DO UPDATE SET
         {
             await _db.Database.ExecuteSqlInterpolatedAsync($"""
 INSERT INTO Items
-(Id, CompanyId, BranchId, Sku, Name, BaseUnitOfMeasureId, InventoryAccountId, SalesRevenueAccountId, CogsAccountId, IsActive, ItemKind)
-VALUES ({row.Id}, {bootstrap.CompanyId}, {bootstrap.BranchId}, {row.Sku}, {row.Name}, {row.BaseUnitOfMeasureId},
+(Id, CompanyId, BranchId, Sku, Name, Barcode, BaseUnitOfMeasureId, InventoryAccountId, SalesRevenueAccountId, CogsAccountId, IsActive, ItemKind)
+VALUES ({row.Id}, {bootstrap.CompanyId}, {bootstrap.BranchId}, {row.Sku}, {row.Name}, {row.Barcode}, {row.BaseUnitOfMeasureId},
  {row.InventoryAccountId}, {row.SalesRevenueAccountId}, {row.CogsAccountId}, {row.IsActive}, {row.ItemKind})
 ON CONFLICT(Id) DO UPDATE SET
- Sku=excluded.Sku, Name=excluded.Name, BaseUnitOfMeasureId=excluded.BaseUnitOfMeasureId,
+ Sku=excluded.Sku, Name=excluded.Name, Barcode=excluded.Barcode, BaseUnitOfMeasureId=excluded.BaseUnitOfMeasureId,
  InventoryAccountId=excluded.InventoryAccountId, SalesRevenueAccountId=excluded.SalesRevenueAccountId,
  CogsAccountId=excluded.CogsAccountId, IsActive=excluded.IsActive, ItemKind=excluded.ItemKind;
 """, cancellationToken).ConfigureAwait(false);
