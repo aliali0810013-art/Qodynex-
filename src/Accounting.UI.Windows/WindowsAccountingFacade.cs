@@ -8,6 +8,7 @@ namespace Accounting.UI.Windows;
 
 public sealed record ItemLookup(Guid Id, string Sku, string Name, Guid BaseUnitOfMeasureId, ItemKind ItemKind);
 public sealed record PartnerLookup(Guid Id, string Code, string Name, Guid ControlAccountId, decimal CreditLimit);
+public sealed record AccountLookup(Guid Id, string Code, string Name);
 public sealed record InvoiceDraftLine(Guid ItemId, Guid UnitOfMeasureId, decimal Quantity, decimal BaseUnitsPerUnit, decimal UnitPrice);
 public sealed record LedgerRow(DateTimeOffset DateUtc, string Reference, string Description, decimal Debit, decimal Credit, decimal RunningBalance);
 public sealed record TrialBalanceRow(Guid AccountId, string Code, string Name, decimal Debit, decimal Credit, decimal Balance);
@@ -18,13 +19,12 @@ public sealed class WindowsAccountingFacade
     private readonly AccountingPostingEngine _posting;
     private readonly IAccountingQueryService _queries;
     private readonly LocalTempNumberGenerator _numbers;
-    private readonly ICurrencyPolicyService _currency;
     private readonly UserContext _user;
 
     public WindowsAccountingFacade(LocalAccountingDbContext db, AccountingPostingEngine posting, IAccountingQueryService queries,
-        LocalTempNumberGenerator numbers, ICurrencyPolicyService currency, UserContext user)
+        LocalTempNumberGenerator numbers, UserContext user)
     {
-        _db = db; _posting = posting; _queries = queries; _numbers = numbers; _currency = currency; _user = user;
+        _db = db; _posting = posting; _queries = queries; _numbers = numbers; _user = user;
     }
 
     public async Task<IReadOnlyList<ItemLookup>> SearchItemsAsync(string text, CancellationToken ct = default)
@@ -58,6 +58,20 @@ public sealed class WindowsAccountingFacade
             .Select(x => new PartnerLookup(x.Id, x.Code, x.Name, x.ControlAccountId, x.CreditLimit))
             .ToListAsync(ct).ConfigureAwait(false);
     }
+
+    public async Task<IReadOnlyList<AccountLookup>> SearchAccountsAsync(string text, CancellationToken ct = default)
+    {
+        text = text.Trim();
+        return await _db.Accounts.AsNoTracking()
+            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive && x.IsPostable
+                && (text == "" || x.Code.Contains(text) || x.Name.Contains(text)))
+            .OrderBy(x => x.Code).Take(50)
+            .Select(x => new AccountLookup(x.Id, x.Code, x.Name))
+            .ToListAsync(ct).ConfigureAwait(false);
+    }
+
+    public Task<StockPosition> GetStockPositionAsync(Guid itemId, Guid warehouseId, CancellationToken ct = default) =>
+        _queries.GetStockPositionAsync(_user, itemId, warehouseId, ct);
 
     public async Task<CompanyPolicy> GetPolicyAsync(CancellationToken ct = default) =>
         (await _db.Companies.AsNoTracking().SingleAsync(x => x.Id == _user.CompanyId, ct).ConfigureAwait(false)).GetPolicy();
