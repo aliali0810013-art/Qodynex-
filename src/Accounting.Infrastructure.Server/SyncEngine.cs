@@ -49,6 +49,7 @@ public sealed class SyncPushCommandHandler
         {
             _tenant.DemandTenant(envelope.CompanyId, envelope.BranchId);
             if (envelope.DeviceId != _tenant.DeviceId) throw new UnauthorizedAccessException("Envelope DeviceId does not match JWT DeviceId.");
+            DemandPermission(envelope);
             acknowledgements.Add(await ProcessMessageAsync(envelope, cancellationToken).ConfigureAwait(false));
         }
 
@@ -62,6 +63,15 @@ public sealed class SyncPushCommandHandler
             _clock.UtcNow,
             max,
             acknowledgements);
+    }
+
+    private void DemandPermission(SyncEnvelope envelope)
+    {
+        var required = string.Equals(envelope.EventType, "ReversePostedDocument", StringComparison.OrdinalIgnoreCase)
+            ? "accounting.reverse"
+            : "accounting.post";
+        if (!_tenant.RoleClaims.Contains(required) && !_tenant.RoleClaims.Contains("tenant.admin"))
+            throw new UnauthorizedAccessException($"JWT lacks required permission '{required}'.");
     }
 
     private async Task<SyncAck> ProcessMessageAsync(SyncEnvelope envelope, CancellationToken cancellationToken)
