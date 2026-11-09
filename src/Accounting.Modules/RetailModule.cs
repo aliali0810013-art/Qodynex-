@@ -18,7 +18,7 @@ public sealed class RetailModule : IActivityModule
     public string DisplayName => "تجزئة";
     public IReadOnlySet<string> Features { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        "barcode.quick-entry", "pricing.tax-inclusive", "payment.cash", "payment.card", "pos.fast"
+        "barcode.quick-entry", "pricing.tax-inclusive", "payment.cash", "payment.card", "pos.fast", "inventory.stock"
     };
     public IReadOnlyList<ModuleScreenDefinition> Screens { get; } =
     [
@@ -39,6 +39,9 @@ public sealed class RetailPostingRule : IDocumentPostingRule
     public async Task ValidateAsync(CommercialDocument document, UserContext userContext, CancellationToken cancellationToken)
     {
         if (document is not SalesInvoice and not PurchaseInvoice) return;
+        var policy=(await _store.GetCompanyAsync(userContext.CompanyId,cancellationToken).ConfigureAwait(false)).GetPolicy();
+        if (policy.TaxPolicy.Enabled && !policy.TaxPolicy.PricesIncludeTax)
+            throw new AccountingDomainException("Retail module requires tax-inclusive pricing when tax is enabled.");
         var itemIds = document switch
         {
             SalesInvoice sales => sales.Lines.Select(x => x.ItemId),
