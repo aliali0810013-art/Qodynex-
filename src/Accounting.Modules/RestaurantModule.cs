@@ -23,7 +23,7 @@ public sealed class RestaurantModule : IActivityModule
     public string DisplayName => "مطاعم";
     public IReadOnlySet<string> Features { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        "restaurant.order", "restaurant.dine-in", "restaurant.takeaway", "restaurant.delivery"
+        "restaurant.order", "restaurant.dine-in", "restaurant.takeaway", "restaurant.delivery", "inventory.stock"
     };
     public IReadOnlyList<ModuleScreenDefinition> Screens { get; } =
     [
