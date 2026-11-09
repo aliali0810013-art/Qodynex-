@@ -1,4 +1,4 @@
-name: accounting-core
+name: accounting-platform
 
 on:
   push:
@@ -7,16 +7,70 @@ on:
     branches: [ main ]
 
 jobs:
-  build-test:
+  core-server-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: qodynex_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d qodynex_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      QODYNEX_TEST_POSTGRES: Host=localhost;Port=5432;Database=qodynex_test;Username=postgres;Password=postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            Directory.Packages.props
+      - name: Restore core and server tests
+        run: |
+          dotnet restore tests/Accounting.Domain.Tests/Accounting.Domain.Tests.csproj
+          dotnet restore tests/Accounting.Integration.LocalTests/Accounting.Integration.LocalTests.csproj
+          dotnet restore tests/Accounting.Server.IntegrationTests/Accounting.Server.IntegrationTests.csproj
+          dotnet restore src/Accounting.Server.Api/Accounting.Server.Api.csproj
+      - name: Build server
+        run: dotnet build src/Accounting.Server.Api/Accounting.Server.Api.csproj --configuration Release --no-restore
+      - name: Domain tests
+        run: dotnet test tests/Accounting.Domain.Tests/Accounting.Domain.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=domain.trx"
+      - name: Local SQLite integration tests
+        run: dotnet test tests/Accounting.Integration.LocalTests/Accounting.Integration.LocalTests.csproj --configuration Release --no-restore --logger "trx;LogFileName=local.trx"
+      - name: PostgreSQL and sync integration tests
+        run: dotnet test tests/Accounting.Server.IntegrationTests/Accounting.Server.IntegrationTests.csproj --configuration Release --no-restore --logger "trx;LogFileName=server.trx"
+
+  windows-desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore Windows app
+        run: dotnet restore src/Accounting.UI.Windows/Accounting.UI.Windows.csproj
+      - name: Build Windows app
+        run: dotnet build src/Accounting.UI.Windows/Accounting.UI.Windows.csproj --configuration Release --no-restore
+
+  android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Restore
-        run: dotnet restore Qodynex.Accounting.sln
-      - name: Build
-        run: dotnet build Qodynex.Accounting.sln --configuration Release --no-restore
-      - name: Test
-        run: dotnet test Qodynex.Accounting.sln --configuration Release --no-build --logger "trx;LogFileName=tests.trx"
+      - name: Install MAUI Android workload
+        run: dotnet workload install maui-android --skip-manifest-update
+      - name: Restore Android app
+        run: dotnet restore src/Accounting.UI.Android/Accounting.UI.Android.csproj
+      - name: Build Android app
+        run: dotnet build src/Accounting.UI.Android/Accounting.UI.Android.csproj --framework net8.0-android --configuration Release --no-restore
