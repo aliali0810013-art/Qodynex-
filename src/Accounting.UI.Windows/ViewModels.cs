@@ -166,6 +166,7 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
                     existing.Quantity += 1m;
                 else
                 {
+                    var suggestedPrice = await _facade.GetSuggestedUnitPriceAsync(ModuleKey, item.Id, 1m, 0m, cancellationToken).ConfigureAwait(false);
                     var line = new InvoiceLineViewModel
                     {
                         ItemId = item.Id,
@@ -174,7 +175,7 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
                         Name = item.Name,
                         Quantity = 1m,
                         BaseUnitsPerUnit = 1m,
-                        UnitPrice = 0m
+                        UnitPrice = suggestedPrice
                     };
                     line.PropertyChanged += OnLineChanged;
                     Lines.Add(line);
