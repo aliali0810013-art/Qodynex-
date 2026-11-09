@@ -20,6 +20,7 @@ public sealed record TenantBootstrapResult(
     IReadOnlyList<ItemMasterSyncRecord> Items,
     IReadOnlyList<WarehouseMasterSyncRecord> Warehouses,
     IReadOnlyList<string> EnabledModules,
+    IReadOnlyList<string> GrantedPermissionCodes,
     DateTimeOffset ServerTimestampUtc);
 
 public sealed record CompanyPolicySyncRecord(
