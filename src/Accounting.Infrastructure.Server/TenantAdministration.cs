@@ -33,6 +33,7 @@ public sealed record ServerItemRegistration(
     Guid Id, string Sku, string Name, string? Barcode, Guid BaseUnitOfMeasureId, ItemKind ItemKind,
     Guid InventoryAccountId, Guid SalesRevenueAccountId, Guid CogsAccountId, bool IsActive);
 
+public sealed record ServerItemUnitConversionRegistration(Guid Id, Guid ItemId, Guid UnitOfMeasureId, decimal BaseUnitsPerUnit);
 public sealed record ServerWarehouseRegistration(Guid Id, string Code, string Name, bool? AllowNegativeStockOverride);
 public sealed record ServerModuleConfigurationRegistration(string ModuleKey, string ConfigurationJson);
 
@@ -47,6 +48,7 @@ public sealed record TenantConfigurationRequest(
     IReadOnlyList<ServerUnitRegistration> Units,
     IReadOnlyList<ServerBusinessPartnerRegistration> Partners,
     IReadOnlyList<ServerItemRegistration> Items,
+    IReadOnlyList<ServerItemUnitConversionRegistration> ItemUnitConversions,
     IReadOnlyList<ServerWarehouseRegistration> Warehouses);
 
 public sealed record TenantConfigurationResult(
@@ -54,6 +56,7 @@ public sealed record TenantConfigurationResult(
     int Units,
     int Partners,
     int Items,
+    int ItemUnitConversions,
     int Warehouses,
     long ServerWatermark,
     DateTimeOffset ConfiguredAtUtc);
@@ -98,6 +101,7 @@ public sealed class TenantAdministrationService
             UnitCount = await _db.UnitOfMeasures.CountAsync(cancellationToken).ConfigureAwait(false),
             PartnerCount = await _db.BusinessPartners.CountAsync(cancellationToken).ConfigureAwait(false),
             ItemCount = await _db.Items.CountAsync(cancellationToken).ConfigureAwait(false),
+            ItemUnitConversionCount = await _db.ItemUnitConversions.CountAsync(cancellationToken).ConfigureAwait(false),
             WarehouseCount = await _db.Warehouses.CountAsync(cancellationToken).ConfigureAwait(false),
             ModuleConfigurationCount = await _db.ModuleConfigurations.CountAsync(cancellationToken).ConfigureAwait(false)
         });
@@ -229,6 +233,21 @@ public sealed class TenantAdministrationService
             row.IsActive = dto.IsActive;
         }
 
+        foreach (var dto in request.ItemUnitConversions)
+        {
+            if (dto.Id == Guid.Empty || dto.ItemId == Guid.Empty || dto.UnitOfMeasureId == Guid.Empty || dto.BaseUnitsPerUnit <= 0m)
+                throw new InvalidOperationException("Every item unit conversion requires Id, item, unit and a positive conversion factor.");
+            var row = await _db.ItemUnitConversions.SingleOrDefaultAsync(x => x.Id == dto.Id, cancellationToken).ConfigureAwait(false);
+            if (row is null)
+            {
+                row = new ServerItemUnitConversion { Id = dto.Id, CompanyId = _tenant.CompanyId, BranchId = _tenant.BranchId };
+                _db.ItemUnitConversions.Add(row);
+            }
+            row.ItemId = dto.ItemId;
+            row.UnitOfMeasureId = dto.UnitOfMeasureId;
+            row.BaseUnitsPerUnit = dto.BaseUnitsPerUnit;
+        }
+
         foreach (var dto in request.Warehouses)
         {
             if (dto.Id == Guid.Empty || string.IsNullOrWhiteSpace(dto.Code) || string.IsNullOrWhiteSpace(dto.Name))
@@ -276,7 +295,7 @@ public sealed class TenantAdministrationService
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         return new TenantConfigurationResult(request.Accounts.Count, request.Units.Count, request.Partners.Count,
-            request.Items.Count, request.Warehouses.Count, change.ServerWatermark, now);
+            request.Items.Count, request.ItemUnitConversions.Count, request.Warehouses.Count, change.ServerWatermark, now);
     }
 
     private TenantBootstrapResult BuildPayload(TenantConfigurationRequest request, DateTimeOffset now) =>
@@ -300,6 +319,7 @@ public sealed class TenantAdministrationService
                 (int)x.PartnerType, x.ControlAccountId, x.Phone, x.CreditLimit, x.IsActive)).ToArray(),
             request.Items.Select(x => new ItemMasterSyncRecord(x.Id, x.Sku, x.Name, x.Barcode, x.BaseUnitOfMeasureId,
                 x.InventoryAccountId, x.SalesRevenueAccountId, x.CogsAccountId, (int)x.ItemKind, x.IsActive)).ToArray(),
+            request.ItemUnitConversions.Select(x => new ItemUnitConversionSyncRecord(x.Id, x.ItemId, x.UnitOfMeasureId, x.BaseUnitsPerUnit)).ToArray(),
             request.Warehouses.Select(x => new WarehouseMasterSyncRecord(x.Id, x.Code, x.Name, x.AllowNegativeStockOverride)).ToArray(),
             request.EnabledModules.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim().ToUpperInvariant()).Distinct().ToArray(),
             request.ModuleConfigurations.Select(x => new ModuleConfigurationSyncRecord(x.ModuleKey.Trim().ToUpperInvariant(),
@@ -343,6 +363,7 @@ public sealed class TenantBootstrapService
         var units = await _db.UnitOfMeasures.AsNoTracking().OrderBy(x => x.Code).ToListAsync(cancellationToken).ConfigureAwait(false);
         var partners = await _db.BusinessPartners.AsNoTracking().OrderBy(x => x.Code).ToListAsync(cancellationToken).ConfigureAwait(false);
         var items = await _db.Items.AsNoTracking().OrderBy(x => x.Sku).ToListAsync(cancellationToken).ConfigureAwait(false);
+        var conversions = await _db.ItemUnitConversions.AsNoTracking().OrderBy(x => x.ItemId).ThenBy(x => x.UnitOfMeasureId).ToListAsync(cancellationToken).ConfigureAwait(false);
         var warehouses = await _db.Warehouses.AsNoTracking().OrderBy(x => x.Code).ToListAsync(cancellationToken).ConfigureAwait(false);
         var moduleConfigurations = await _db.ModuleConfigurations.AsNoTracking().OrderBy(x => x.ModuleKey).ToListAsync(cancellationToken).ConfigureAwait(false);
         device.LastSeenAtUtc = _clock.UtcNow;
@@ -367,6 +388,7 @@ public sealed class TenantBootstrapService
                 (int)x.PartnerType, x.ControlAccountId, x.Phone, x.CreditLimit, x.IsActive)).ToArray(),
             items.Select(x => new ItemMasterSyncRecord(x.Id, x.Sku, x.Name, x.Barcode, x.BaseUnitOfMeasureId,
                 x.InventoryAccountId, x.SalesRevenueAccountId, x.CogsAccountId, (int)x.ItemKind, x.IsActive)).ToArray(),
+            conversions.Select(x => new ItemUnitConversionSyncRecord(x.Id, x.ItemId, x.UnitOfMeasureId, x.BaseUnitsPerUnit)).ToArray(),
             warehouses.Select(x => new WarehouseMasterSyncRecord(x.Id, x.Code, x.Name, x.AllowNegativeStockOverride)).ToArray(),
             profile.EnabledModulesCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             moduleConfigurations.Select(x => new ModuleConfigurationSyncRecord(x.ModuleKey, x.ConfigurationJson)).ToArray(),
