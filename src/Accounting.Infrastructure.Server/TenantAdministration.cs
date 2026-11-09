@@ -30,7 +30,7 @@ public sealed record ServerBusinessPartnerRegistration(
     string? Phone, decimal CreditLimit, bool IsActive);
 
 public sealed record ServerItemRegistration(
-    Guid Id, string Sku, string Name, Guid BaseUnitOfMeasureId, ItemKind ItemKind,
+    Guid Id, string Sku, string Name, string? Barcode, Guid BaseUnitOfMeasureId, ItemKind ItemKind,
     Guid InventoryAccountId, Guid SalesRevenueAccountId, Guid CogsAccountId, bool IsActive);
 
 public sealed record ServerWarehouseRegistration(Guid Id, string Code, string Name, bool? AllowNegativeStockOverride);
@@ -201,6 +201,7 @@ public sealed class TenantAdministrationService
             }
             row.Sku = dto.Sku.Trim();
             row.Name = dto.Name.Trim();
+            row.Barcode = string.IsNullOrWhiteSpace(dto.Barcode) ? null : dto.Barcode.Trim();
             row.BaseUnitOfMeasureId = dto.BaseUnitOfMeasureId;
             row.ItemKind = dto.ItemKind;
             row.InventoryAccountId = dto.InventoryAccountId;
@@ -278,7 +279,7 @@ public sealed class TenantAdministrationService
             request.Units.Select(x => new UnitMasterSyncRecord(x.Id, x.Code, x.Name)).ToArray(),
             request.Partners.Select(x => new BusinessPartnerMasterSyncRecord(x.Id, x.Code, x.Name,
                 (int)x.PartnerType, x.ControlAccountId, x.Phone, x.CreditLimit, x.IsActive)).ToArray(),
-            request.Items.Select(x => new ItemMasterSyncRecord(x.Id, x.Sku, x.Name, x.BaseUnitOfMeasureId,
+            request.Items.Select(x => new ItemMasterSyncRecord(x.Id, x.Sku, x.Name, x.Barcode, x.BaseUnitOfMeasureId,
                 x.InventoryAccountId, x.SalesRevenueAccountId, x.CogsAccountId, (int)x.ItemKind, x.IsActive)).ToArray(),
             request.Warehouses.Select(x => new WarehouseMasterSyncRecord(x.Id, x.Code, x.Name, x.AllowNegativeStockOverride)).ToArray(),
             request.EnabledModules.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim().ToUpperInvariant()).Distinct().ToArray(),
@@ -342,7 +343,7 @@ public sealed class TenantBootstrapService
             units.Select(x => new UnitMasterSyncRecord(x.Id, x.Code, x.Name)).ToArray(),
             partners.Select(x => new BusinessPartnerMasterSyncRecord(x.Id, x.Code, x.Name,
                 (int)x.PartnerType, x.ControlAccountId, x.Phone, x.CreditLimit, x.IsActive)).ToArray(),
-            items.Select(x => new ItemMasterSyncRecord(x.Id, x.Sku, x.Name, x.BaseUnitOfMeasureId,
+            items.Select(x => new ItemMasterSyncRecord(x.Id, x.Sku, x.Name, x.Barcode, x.BaseUnitOfMeasureId,
                 x.InventoryAccountId, x.SalesRevenueAccountId, x.CogsAccountId, (int)x.ItemKind, x.IsActive)).ToArray(),
             warehouses.Select(x => new WarehouseMasterSyncRecord(x.Id, x.Code, x.Name, x.AllowNegativeStockOverride)).ToArray(),
             profile.EnabledModulesCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
