@@ -204,7 +204,7 @@ public sealed class SecondHalfAcceptanceTests
         var tasks = Enumerable.Range(0, 20).Select(async _ =>
         {
             await using var tenant = database.CreateTenant(companyId, branchId, userId, deviceId, roles, clock);
-            await using var tx = await tenant.Db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            await using var tx = await tenant.Db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
             await tenant.Session.ApplyAsync();
             var result = await new OfficialSequenceGenerator(tenant.Db)
                 .NextAsync(nameof(SalesInvoice), clock.UtcNow);
