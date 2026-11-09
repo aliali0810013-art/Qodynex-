@@ -124,6 +124,7 @@ internal sealed class ServerTenantHarness : IAsyncDisposable
             "B1",
             "Main Branch",
             modules,
+            Array.Empty<ServerModuleConfigurationRegistration>(),
             new TenantPolicyRegistration("USD", 2, 6, MidpointRounding.AwayFromZero,
                 InventoryValuationMethod.MovingWeightedAverage, allowNegativeStock, false, 0m, false, null, null),
             new[]
