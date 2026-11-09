@@ -262,21 +262,28 @@ public sealed class AccountingPostingEngine
     private static PostedOperationSyncPayload BuildSyncPayload(CommercialDocument document, JournalEntry journal, IReadOnlyCollection<StockLedgerEntry> stock)
     {
         Guid? partnerId = null, warehouseId = null, primaryAccountId = null, counterAccountId = null;
+        decimal? amount = null;
+        string? description = null;
+        IReadOnlyList<PostedDocumentLineSyncRecord> documentLines = Array.Empty<PostedDocumentLineSyncRecord>();
         switch (document)
         {
             case SalesInvoice sales:
-                partnerId = sales.BusinessPartnerId; warehouseId = sales.WarehouseId; primaryAccountId = sales.SettlementAccountId; break;
+                partnerId = sales.BusinessPartnerId; warehouseId = sales.WarehouseId; primaryAccountId = sales.SettlementAccountId;
+                documentLines = sales.Lines.Select(x => new PostedDocumentLineSyncRecord(x.Id, x.ItemId, x.UnitOfMeasureId, x.Quantity, x.BaseUnitsPerUnit, x.UnitPrice)).ToArray();
+                break;
             case PurchaseInvoice purchase:
-                partnerId = purchase.BusinessPartnerId; warehouseId = purchase.WarehouseId; primaryAccountId = purchase.SettlementAccountId; break;
+                partnerId = purchase.BusinessPartnerId; warehouseId = purchase.WarehouseId; primaryAccountId = purchase.SettlementAccountId;
+                documentLines = purchase.Lines.Select(x => new PostedDocumentLineSyncRecord(x.Id, x.ItemId, x.UnitOfMeasureId, x.Quantity, x.BaseUnitsPerUnit, x.UnitPrice)).ToArray();
+                break;
             case ReceiptVoucher receipt:
-                partnerId = receipt.BusinessPartnerId; primaryAccountId = receipt.CashOrBankAccountId; counterAccountId = receipt.CounterAccountId; break;
+                partnerId = receipt.BusinessPartnerId; primaryAccountId = receipt.CashOrBankAccountId; counterAccountId = receipt.CounterAccountId; amount = receipt.Amount; description = receipt.Description; break;
             case PaymentVoucher payment:
-                partnerId = payment.BusinessPartnerId; primaryAccountId = payment.CashOrBankAccountId; counterAccountId = payment.CounterAccountId; break;
+                partnerId = payment.BusinessPartnerId; primaryAccountId = payment.CashOrBankAccountId; counterAccountId = payment.CounterAccountId; amount = payment.Amount; description = payment.Description; break;
         }
 
         return new PostedOperationSyncPayload(
             new PostedDocumentSyncRecord(document.Id, document.CompanyId, document.BranchId, document.GetType().Name, document.ModuleKey,
-                document.LocalTempNumber, document.DocumentDateUtc, partnerId, warehouseId, primaryAccountId, counterAccountId),
+                document.LocalTempNumber, document.DocumentDateUtc, partnerId, warehouseId, primaryAccountId, counterAccountId, amount, description, documentLines),
             new PostedJournalSyncRecord(journal.Id, journal.CompanyId, journal.BranchId, journal.SourceDocumentId, journal.SourceDocumentType,
                 journal.OperationId, journal.IdempotencyKey, journal.EntryDateUtc, journal.Description, journal.Reference, journal.ReversedEntryId,
                 journal.Lines.Select(x => new PostedJournalLineSyncRecord(x.Id, x.AccountId, x.Debit, x.Credit, x.Memo)).ToArray()),
