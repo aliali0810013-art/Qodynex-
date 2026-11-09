@@ -141,6 +141,7 @@ public sealed class SyncPushCommandHandler
             BranchId = envelope.BranchId,
             DocumentType = payload.Document.DocumentType,
             ModuleKey = payload.Document.ModuleKey,
+            ModuleMetadataJson = payload.Document.ModuleMetadataJson,
             LocalTempNumber = payload.Document.LocalTempNumber,
             OfficialSequenceNumber = allocation.Number,
             OfficialSequence = allocation.Sequence,
