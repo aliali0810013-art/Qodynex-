@@ -7,6 +7,7 @@ using Accounting.Modules;
 using Accounting.SharedKernel;
 using Accounting.Sync.Client;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Accounting.Server.IntegrationTests;
 
@@ -36,7 +37,27 @@ internal sealed class PostgresTestDatabase
         await using var db = new ServerAccountingDbContext(options, systemTenant);
         await db.Database.EnsureDeletedAsync();
         await new ServerDatabaseBootstrapper(db).InitializeAsync();
-        return new PostgresTestDatabase(connection);
+
+        await db.Database.ExecuteSqlRawAsync("""
+DO $
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'qodynex_app') THEN
+        CREATE ROLE qodynex_app LOGIN PASSWORD 'qodynex';
+    END IF;
+END $;
+ALTER ROLE qodynex_app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD 'qodynex';
+GRANT CONNECT ON DATABASE qodynex_test TO qodynex_app;
+GRANT USAGE ON SCHEMA public TO qodynex_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO qodynex_app;
+GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO qodynex_app;
+""");
+
+        var appConnection = new NpgsqlConnectionStringBuilder(connection)
+        {
+            Username = "qodynex_app",
+            Password = "qodynex"
+        }.ConnectionString;
+        return new PostgresTestDatabase(appConnection);
     }
 
     public ServerTenantHarness CreateTenant(
