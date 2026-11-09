@@ -62,6 +62,9 @@ public sealed class MobileAccountingFacade
             .Select(x => new MobileWarehouse(x.Id, x.Code, x.Name))
             .ToListAsync(ct);
 
+    public async Task<CompanyPolicy> GetPolicyAsync(CancellationToken ct = default) =>
+        (await _db.Companies.AsNoTracking().SingleAsync(x => x.Id == _user.CompanyId, ct).ConfigureAwait(false)).GetPolicy();
+
     public async Task<decimal> GetSuggestedUnitPriceAsync(string moduleKey, Guid itemId, decimal baseQuantity, decimal fallback, CancellationToken ct = default)
     {
         if (!string.Equals(moduleKey, Accounting.Modules.WholesaleModule.ModuleKey, StringComparison.OrdinalIgnoreCase)) return fallback;
