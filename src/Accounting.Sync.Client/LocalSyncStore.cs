@@ -24,13 +24,17 @@ public sealed class LocalSyncStore
     public async Task<IReadOnlyList<SyncEnvelope>> GetPendingEnvelopesAsync(UserContext user, int take, CancellationToken cancellationToken = default)
     {
         DemandTenant(user);
-        var messages = await _db.OutboxMessages.AsNoTracking()
+        // SQLite cannot translate DateTimeOffset ORDER BY. Filter per tenant on
+        // the database, then preserve stable oldest-first ordering in memory.
+        // Do not apply Take before sorting or older pending operations may starve.
+        var pending = await _db.OutboxMessages.AsNoTracking()
             .Where(x => x.CompanyId == user.CompanyId && x.BranchId == user.BranchId
                 && (x.Status == OutboxStatus.Pending || x.Status == OutboxStatus.Failed))
-            .OrderBy(x => x.CreatedAtUtc)
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        var messages = pending.OrderBy(x => x.CreatedAtUtc)
             .ThenBy(x => x.Id)
             .Take(Math.Clamp(take, 1, SyncProtocol.MaxBatchSize))
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
+            .ToList();
 
         return messages.Select(x => new SyncEnvelope(
             x.Id,
