@@ -178,6 +178,7 @@ public sealed class Item : TenantEntity
 {
     public string Sku { get; private set; } = string.Empty;
     public string Name { get; private set; } = string.Empty;
+    public string? Barcode { get; private set; }
     public Guid BaseUnitOfMeasureId { get; private set; }
     public Guid InventoryAccountId { get; private set; }
     public Guid SalesRevenueAccountId { get; private set; }
@@ -185,13 +186,14 @@ public sealed class Item : TenantEntity
     public ItemKind ItemKind { get; private set; }
     public bool IsActive { get; private set; }
     private Item() { }
-    public Item(Guid companyId, Guid branchId, string sku, string name, Guid baseUnitOfMeasureId, Guid inventoryAccountId, Guid salesRevenueAccountId, Guid cogsAccountId, ItemKind itemKind = ItemKind.Stock) : base(companyId, branchId)
+    public Item(Guid companyId, Guid branchId, string sku, string name, Guid baseUnitOfMeasureId, Guid inventoryAccountId, Guid salesRevenueAccountId, Guid cogsAccountId, ItemKind itemKind = ItemKind.Stock, string? barcode = null) : base(companyId, branchId)
     {
         Sku = string.IsNullOrWhiteSpace(sku) ? throw new AccountingDomainException("SKU is required.") : sku.Trim();
         Name = string.IsNullOrWhiteSpace(name) ? throw new AccountingDomainException("Item name is required.") : name.Trim();
         if (itemKind == ItemKind.Stock && (inventoryAccountId == Guid.Empty || cogsAccountId == Guid.Empty))
             throw new AccountingDomainException("Stock items require inventory and COGS accounts.");
         if (salesRevenueAccountId == Guid.Empty) throw new AccountingDomainException("Sales revenue account is required.");
+        Barcode = string.IsNullOrWhiteSpace(barcode) ? null : barcode.Trim();
         BaseUnitOfMeasureId = baseUnitOfMeasureId; InventoryAccountId = inventoryAccountId; SalesRevenueAccountId = salesRevenueAccountId; CogsAccountId = cogsAccountId; ItemKind = itemKind; IsActive = true;
     }
 }
