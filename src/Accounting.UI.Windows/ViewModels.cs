@@ -9,17 +9,64 @@ namespace Accounting.UI.Windows;
 
 public sealed class InvoiceLineViewModel : ObservableObject
 {
+    private Guid _unitOfMeasureId;
+    private ItemUnitOption? _selectedUnit;
     private decimal _quantity = 1m;
     private decimal _baseUnitsPerUnit = 1m;
     private decimal _unitPrice;
 
     public Guid ItemId { get; init; }
-    public Guid UnitOfMeasureId { get; init; }
     public string Sku { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
-    public decimal Quantity { get => _quantity; set { if (Set(ref _quantity, value)) Raise(nameof(LineTotal)); } }
-    public decimal BaseUnitsPerUnit { get => _baseUnitsPerUnit; set => Set(ref _baseUnitsPerUnit, value); }
-    public decimal UnitPrice { get => _unitPrice; set { if (Set(ref _unitPrice, value)) Raise(nameof(LineTotal)); } }
+    public ObservableCollection<ItemUnitOption> UnitOptions { get; } = new();
+
+    public Guid UnitOfMeasureId
+    {
+        get => _unitOfMeasureId;
+        private set => Set(ref _unitOfMeasureId, value);
+    }
+
+    public ItemUnitOption? SelectedUnit
+    {
+        get => _selectedUnit;
+        set
+        {
+            if (!Set(ref _selectedUnit, value) || value is null) return;
+            UnitOfMeasureId = value.UnitOfMeasureId;
+            BaseUnitsPerUnit = value.BaseUnitsPerUnit;
+        }
+    }
+
+    public decimal Quantity
+    {
+        get => _quantity;
+        set
+        {
+            if (value <= 0m) return;
+            if (Set(ref _quantity, value)) Raise(nameof(LineTotal));
+        }
+    }
+
+    public decimal BaseUnitsPerUnit
+    {
+        get => _baseUnitsPerUnit;
+        private set
+        {
+            if (value <= 0m) return;
+            Set(ref _baseUnitsPerUnit, value);
+        }
+    }
+
+    public decimal UnitPrice
+    {
+        get => _unitPrice;
+        set
+        {
+            if (value < 0m) return;
+            if (Set(ref _unitPrice, value)) Raise(nameof(LineTotal));
+        }
+    }
+
     public decimal LineTotal => Quantity * UnitPrice;
 }
 
