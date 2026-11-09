@@ -209,7 +209,11 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
                 return;
             }
 
-            var suggestedPrice = await _facade.GetSuggestedUnitPriceAsync(ModuleKey, item.Id, 1m, 0m, cancellationToken).ConfigureAwait(false);
+            var unitOptions = await _facade.GetItemUnitsAsync(item.Id, cancellationToken).ConfigureAwait(false);
+            if (unitOptions.Count == 0) throw new InvalidOperationException("No unit of measure is configured for the selected item.");
+            var defaultUnit = unitOptions[0];
+            var suggestedPrice = await _facade.GetSuggestedUnitPriceAsync(
+                ModuleKey, item.Id, defaultUnit.BaseUnitsPerUnit, 0m, cancellationToken).ConfigureAwait(false);
             await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 var existing = Lines.FirstOrDefault(x => x.ItemId == item.Id);
@@ -220,13 +224,13 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
                     var line = new InvoiceLineViewModel
                     {
                         ItemId = item.Id,
-                        UnitOfMeasureId = item.BaseUnitOfMeasureId,
                         Sku = item.Sku,
                         Name = item.Name,
                         Quantity = 1m,
-                        BaseUnitsPerUnit = 1m,
                         UnitPrice = suggestedPrice
                     };
+                    foreach (var option in unitOptions) line.UnitOptions.Add(option);
+                    line.SelectedUnit = defaultUnit;
                     line.PropertyChanged += OnLineChanged;
                     Lines.Add(line);
                     SelectedLine = line;
