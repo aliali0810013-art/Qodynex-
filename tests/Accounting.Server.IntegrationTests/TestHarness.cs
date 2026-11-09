@@ -93,6 +93,8 @@ internal sealed class ServerTenantHarness : IAsyncDisposable
     public Guid ServiceRevenueAccountId { get; } = Guid.NewGuid();
     public Guid ServiceCostAccountId { get; } = Guid.NewGuid();
     public Guid UnitId { get; } = Guid.NewGuid();
+    public Guid CartonUnitId { get; } = Guid.NewGuid();
+    public Guid CartonConversionId { get; } = Guid.NewGuid();
     public Guid WarehouseId { get; } = Guid.NewGuid();
     public Guid StockItemId { get; } = Guid.NewGuid();
     public Guid ServiceItemId { get; } = Guid.NewGuid();
@@ -158,7 +160,11 @@ internal sealed class ServerTenantHarness : IAsyncDisposable
                 new ServerAccountRegistration(ServiceRevenueAccountId, "4200", "Service Revenue", null, AccountType.Revenue, NormalBalance.Credit, true, true),
                 new ServerAccountRegistration(ServiceCostAccountId, "5200", "Service Cost", null, AccountType.Expense, NormalBalance.Debit, true, true)
             },
-            new[] { new ServerUnitRegistration(UnitId, "EA", "Each") },
+            new[]
+            {
+                new ServerUnitRegistration(UnitId, "EA", "Each"),
+                new ServerUnitRegistration(CartonUnitId, "CTN", "Carton")
+            },
             new[]
             {
                 new ServerBusinessPartnerRegistration(CustomerId, "C001", "Customer", PartnerType.Customer,
