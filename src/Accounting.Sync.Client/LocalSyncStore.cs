@@ -77,6 +77,161 @@ public sealed class LocalSyncStore
         return new LocalSyncStatus(pending, failed, conflicts, state?.LastPulledWatermark ?? 0L, state?.LastSuccessfulSyncUtc, state?.LastError);
     }
 
+    public async Task ApplyBootstrapAsync(UserContext user, TenantBootstrapResult bootstrap, CancellationToken cancellationToken = default)
+    {
+        DemandTenant(user);
+        SyncProtocol.EnsureCompatible(bootstrap.ServerSchemaVersion, bootstrap.ProtocolVersion);
+        if (bootstrap.CompanyId != user.CompanyId || bootstrap.BranchId != user.BranchId)
+            throw new UnauthorizedAccessException("Bootstrap payload belongs to a different tenant.");
+
+        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        await ApplyBootstrapCoreAsync(user, bootstrap, updateSecurity: true, cancellationToken).ConfigureAwait(false);
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ApplyBootstrapCoreAsync(UserContext user, TenantBootstrapResult bootstrap, bool updateSecurity, CancellationToken cancellationToken)
+    {
+        var p = bootstrap.Policy;
+        await _db.Database.ExecuteSqlInterpolatedAsync($"""
+INSERT INTO Companies
+(Id, CompanyId, BranchId, Name, BaseCurrencyCode, CurrencyScale, RoundingMode, QuantityScale, InventoryValuationMethod,
+ AllowNegativeStock, TaxEnabled, TaxRate, PricesIncludeTax, OutputTaxAccountId, InputTaxAccountId)
+VALUES
+({bootstrap.CompanyId}, {bootstrap.CompanyId}, {Guid.Empty}, {bootstrap.CompanyName}, {p.BaseCurrencyCode}, {p.CurrencyScale},
+ {p.RoundingMode}, {p.QuantityScale}, {p.InventoryValuationMethod}, {p.AllowNegativeStock}, {p.TaxEnabled}, {p.TaxRate},
+ {p.PricesIncludeTax}, {p.OutputTaxAccountId}, {p.InputTaxAccountId})
+ON CONFLICT(Id) DO UPDATE SET
+ Name=excluded.Name, BaseCurrencyCode=excluded.BaseCurrencyCode, CurrencyScale=excluded.CurrencyScale,
+ RoundingMode=excluded.RoundingMode, QuantityScale=excluded.QuantityScale, InventoryValuationMethod=excluded.InventoryValuationMethod,
+ AllowNegativeStock=excluded.AllowNegativeStock, TaxEnabled=excluded.TaxEnabled, TaxRate=excluded.TaxRate,
+ PricesIncludeTax=excluded.PricesIncludeTax, OutputTaxAccountId=excluded.OutputTaxAccountId, InputTaxAccountId=excluded.InputTaxAccountId;
+""", cancellationToken).ConfigureAwait(false);
+
+        await _db.Database.ExecuteSqlInterpolatedAsync($"""
+INSERT INTO Branches (Id, CompanyId, BranchId, Code, Name)
+VALUES ({bootstrap.BranchId}, {bootstrap.CompanyId}, {bootstrap.BranchId}, {bootstrap.BranchCode}, {bootstrap.BranchName})
+ON CONFLICT(Id) DO UPDATE SET Code=excluded.Code, Name=excluded.Name;
+""", cancellationToken).ConfigureAwait(false);
+
+        foreach (var row in bootstrap.Accounts)
+        {
+            await _db.Database.ExecuteSqlInterpolatedAsync($"""
+INSERT INTO Accounts
+(Id, CompanyId, BranchId, Code, Name, ParentAccountId, AccountType, NormalBalance, IsPostable, IsActive)
+VALUES ({row.Id}, {bootstrap.CompanyId}, {bootstrap.BranchId}, {row.Code}, {row.Name}, {row.ParentAccountId},
+ {row.AccountType}, {row.NormalBalance}, {row.IsPostable}, {row.IsActive})
+ON CONFLICT(Id) DO UPDATE SET
+ Code=excluded.Code, Name=excluded.Name, ParentAccountId=excluded.ParentAccountId, AccountType=excluded.AccountType,
+ NormalBalance=excluded.NormalBalance, IsPostable=excluded.IsPostable, IsActive=excluded.IsActive;
+""", cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var row in bootstrap.Units)
+        {
+            await _db.Database.ExecuteSqlInterpolatedAsync($"""
+INSERT INTO UnitOfMeasures (Id, CompanyId, BranchId, Code, Name)
+VALUES ({row.Id}, {bootstrap.CompanyId}, {bootstrap.BranchId}, {row.Code}, {row.Name})
+ON CONFLICT(Id) DO UPDATE SET Code=excluded.Code, Name=excluded.Name;
+""", cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var row in bootstrap.Partners)
+        {
+            await _db.Database.ExecuteSqlInterpolatedAsync($"""
+INSERT INTO BusinessPartners
+(Id, CompanyId, BranchId, Code, Name, PartnerType, ControlAccountId, Phone, CreditLimit, IsActive)
+VALUES ({row.Id}, {bootstrap.CompanyId}, {bootstrap.BranchId}, {row.Code}, {row.Name}, {row.PartnerType},
+ {row.ControlAccountId}, {row.Phone}, {row.CreditLimit}, {row.IsActive})
+ON CONFLICT(Id) DO UPDATE SET
+ Code=excluded.Code, Name=excluded.Name, PartnerType=excluded.PartnerType, ControlAccountId=excluded.ControlAccountId,
+ Phone=excluded.Phone, CreditLimit=excluded.CreditLimit, IsActive=excluded.IsActive;
+""", cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var row in bootstrap.Items)
+        {
+            await _db.Database.ExecuteSqlInterpolatedAsync($"""
+INSERT INTO Items
+(Id, CompanyId, BranchId, Sku, Name, BaseUnitOfMeasureId, InventoryAccountId, SalesRevenueAccountId, CogsAccountId, IsActive, ItemKind)
+VALUES ({row.Id}, {bootstrap.CompanyId}, {bootstrap.BranchId}, {row.Sku}, {row.Name}, {row.BaseUnitOfMeasureId},
+ {row.InventoryAccountId}, {row.SalesRevenueAccountId}, {row.CogsAccountId}, {row.IsActive}, {row.ItemKind})
+ON CONFLICT(Id) DO UPDATE SET
+ Sku=excluded.Sku, Name=excluded.Name, BaseUnitOfMeasureId=excluded.BaseUnitOfMeasureId,
+ InventoryAccountId=excluded.InventoryAccountId, SalesRevenueAccountId=excluded.SalesRevenueAccountId,
+ CogsAccountId=excluded.CogsAccountId, IsActive=excluded.IsActive, ItemKind=excluded.ItemKind;
+""", cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var row in bootstrap.Warehouses)
+        {
+            await _db.Database.ExecuteSqlInterpolatedAsync($"""
+INSERT INTO Warehouses
+(Id, CompanyId, BranchId, Code, Name, AllowNegativeStockOverride)
+VALUES ({row.Id}, {bootstrap.CompanyId}, {bootstrap.BranchId}, {row.Code}, {row.Name}, {row.AllowNegativeStockOverride})
+ON CONFLICT(Id) DO UPDATE SET Code=excluded.Code, Name=excluded.Name, AllowNegativeStockOverride=excluded.AllowNegativeStockOverride;
+""", cancellationToken).ConfigureAwait(false);
+        }
+
+        var state = await GetOrCreateStateAsync(user, cancellationToken).ConfigureAwait(false);
+        state.CompanyName = bootstrap.CompanyName;
+        state.BranchName = bootstrap.BranchName;
+        state.EnabledModulesCsv = string.Join(',', bootstrap.EnabledModules);
+        state.LastSuccessfulSyncUtc = bootstrap.ServerTimestampUtc;
+        state.LastError = null;
+
+        if (updateSecurity)
+            await ApplySecurityProjectionAsync(user, bootstrap.GrantedPermissionCodes, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ApplySecurityProjectionAsync(UserContext user, IReadOnlyList<string> grantedClaims, CancellationToken cancellationToken)
+    {
+        var localUser = await _db.AppUsers.SingleOrDefaultAsync(x => x.Id == user.UserId, cancellationToken).ConfigureAwait(false);
+        if (localUser is null)
+        {
+            localUser = new AppUser(user.CompanyId, user.BranchId, user.UserId.ToString("N")[..8], "Server user", user.UserId);
+            _db.AppUsers.Add(localUser);
+        }
+
+        var roleName = $"SERVER-PROJECTION-{user.UserId:N}";
+        var role = await _db.Roles.SingleOrDefaultAsync(
+            x => x.CompanyId == user.CompanyId && x.BranchId == user.BranchId && x.Name == roleName,
+            cancellationToken).ConfigureAwait(false);
+        if (role is null)
+        {
+            role = new Role(user.CompanyId, user.BranchId, roleName);
+            _db.Roles.Add(role);
+        }
+
+        if (!await _db.AppUserRoles.AnyAsync(x => x.UserId == user.UserId && x.RoleId == role.Id, cancellationToken).ConfigureAwait(false))
+            _db.AppUserRoles.Add(new AppUserRole(user.CompanyId, user.BranchId, user.UserId, role.Id));
+
+        var oldAssignments = await _db.RolePermissionAssignments.Where(x => x.RoleId == role.Id).ToListAsync(cancellationToken).ConfigureAwait(false);
+        _db.RolePermissionAssignments.RemoveRange(oldAssignments);
+
+        var desired = grantedClaims
+            .Where(x => x.StartsWith("accounting.", StringComparison.OrdinalIgnoreCase))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (grantedClaims.Any(x => string.Equals(x, "tenant.admin", StringComparison.OrdinalIgnoreCase)))
+        {
+            desired.Add("accounting.post");
+            desired.Add("accounting.reverse");
+        }
+
+        foreach (var code in desired)
+        {
+            var permission = await _db.Permissions.SingleOrDefaultAsync(
+                x => x.CompanyId == user.CompanyId && x.BranchId == user.BranchId && x.Code == code,
+                cancellationToken).ConfigureAwait(false);
+            if (permission is null)
+            {
+                permission = new Permission(user.CompanyId, user.BranchId, code, code);
+                _db.Permissions.Add(permission);
+            }
+            _db.RolePermissionAssignments.Add(new RolePermissionAssignment(user.CompanyId, user.BranchId, role.Id, permission.Id));
+        }
+    }
+
     public async Task ApplyPushResultAsync(UserContext user, SyncPushResult result, CancellationToken cancellationToken = default)
     {
         DemandTenant(user);
@@ -159,6 +314,14 @@ public sealed class LocalSyncStore
 
         foreach (var change in result.Changes.OrderBy(x => x.ServerWatermark))
         {
+            if (change.ChangeType == "TenantMasterDataChanged")
+            {
+                var bootstrap = JsonSerializer.Deserialize<TenantBootstrapResult>(change.PayloadJson)
+                                ?? throw new InvalidOperationException("Invalid tenant master-data payload.");
+                await ApplyBootstrapCoreAsync(user, bootstrap, updateSecurity: false, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             if (change.ChangeType == "SyncConflictRequiresResolution")
             {
                 var conflict = JsonSerializer.Deserialize<SyncConflictPayload>(change.PayloadJson)
