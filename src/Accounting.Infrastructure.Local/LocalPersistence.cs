@@ -40,6 +40,8 @@ public sealed class LocalAccountingDbContext : DbContext
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<OfficialSequenceAssignment> OfficialSequenceAssignments => Set<OfficialSequenceAssignment>();
     public DbSet<DocumentReversalRecord> DocumentReversalRecords => Set<DocumentReversalRecord>();
+    public DbSet<LocalSyncState> LocalSyncStates => Set<LocalSyncState>();
+    public DbSet<LocalSyncConflict> LocalSyncConflicts => Set<LocalSyncConflict>();
 
     protected override void OnModelCreating(ModelBuilder m)
     {
@@ -51,6 +53,18 @@ public sealed class LocalAccountingDbContext : DbContext
         Configure<JournalEntry>(m, "JournalEntries"); Configure<JournalLine>(m, "JournalLines"); Configure<StockLedgerEntry>(m, "StockLedgerEntries");
         Configure<AuditLog>(m, "AuditLogs"); Configure<OutboxMessage>(m, "OutboxMessages"); Configure<OfficialSequenceAssignment>(m, "OfficialSequenceAssignments");
         Configure<DocumentReversalRecord>(m, "DocumentReversalRecords");
+        m.Entity<LocalSyncState>(b =>
+        {
+            b.ToTable("LocalSyncStates");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => new { x.CompanyId, x.BranchId, x.DeviceId }).IsUnique();
+        });
+        m.Entity<LocalSyncConflict>(b =>
+        {
+            b.ToTable("LocalSyncConflicts");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => new { x.CompanyId, x.BranchId, x.OperationId }).IsUnique();
+        });
 
         m.Entity<CommercialDocument>(b =>
         {
