@@ -7,6 +7,9 @@ public sealed class LocalSyncState
     public Guid BranchId { get; set; }
     public Guid DeviceId { get; set; }
     public long LastPulledWatermark { get; set; }
+    public string CompanyName { get; set; } = string.Empty;
+    public string BranchName { get; set; } = string.Empty;
+    public string EnabledModulesCsv { get; set; } = "RETAIL";
     public DateTimeOffset? LastSuccessfulSyncUtc { get; set; }
     public string? LastError { get; set; }
 }
