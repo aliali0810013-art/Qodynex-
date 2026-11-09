@@ -35,6 +35,7 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
     private decimal _subtotal;
     private decimal _tax;
     private decimal _grandTotal;
+    private CompanyPolicy? _policy;
 
     public InvoiceEditorViewModel(WindowsAccountingFacade facade, Action<string, string, object> openTab, bool isSales, string moduleKey)
     {
@@ -49,6 +50,7 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
         DetailsCommand = new AsyncRelayCommand(OpenSelectedDetailsAsync);
         RemoveLineCommand = new RelayCommand(RemoveSelectedLine, () => SelectedLine is not null);
+        _ = LoadPolicyAsync();
     }
 
     public string Title => _isSales ? "فاتورة مبيعات" : "فاتورة مشتريات";
@@ -125,7 +127,7 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
 
     public async Task RefreshAsync()
     {
-        await RecalculateAsync().ConfigureAwait(true);
+        await LoadPolicyAsync().ConfigureAwait(true);
         Status = "تمت إعادة الحساب من سياسة الشركة.";
     }
 
@@ -197,26 +199,45 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
 
     private void OnLineChanged(object? sender, PropertyChangedEventArgs e) => Recalculate();
 
-    private async Task RecalculateAsync()
+    private async Task LoadPolicyAsync()
     {
-        var policy = await _facade.GetPolicyAsync().ConfigureAwait(true);
-        var subtotal = Lines.Sum(x => x.LineTotal);
-        Subtotal = decimal.Round(subtotal, policy.CurrencyScale, policy.RoundingMode);
-        if (!policy.TaxPolicy.Enabled || policy.TaxPolicy.Rate == 0m) Tax = 0m;
-        else if (policy.TaxPolicy.PricesIncludeTax)
+        try
         {
-            var net = decimal.Round(Subtotal / (1m + policy.TaxPolicy.Rate), policy.CurrencyScale, policy.RoundingMode);
-            Tax = Subtotal - net;
+            _policy = await _facade.GetPolicyAsync().ConfigureAwait(true);
+            Recalculate();
         }
-        else
-            Tax = decimal.Round(Subtotal * policy.TaxPolicy.Rate, policy.CurrencyScale, policy.RoundingMode);
-        GrandTotal = policy.TaxPolicy.PricesIncludeTax ? Subtotal : Subtotal + Tax;
+        catch (Exception ex)
+        {
+            Status = ex.Message;
+        }
     }
 
     private void Recalculate()
     {
-        Subtotal = Lines.Sum(x => x.LineTotal);
-        GrandTotal = Subtotal + Tax;
+        var subtotal = Lines.Sum(x => x.LineTotal);
+        if (_policy is null)
+        {
+            Subtotal = subtotal;
+            Tax = 0m;
+            GrandTotal = subtotal;
+            return;
+        }
+
+        var policy = _policy;
+        Subtotal = decimal.Round(subtotal, policy.CurrencyScale, policy.RoundingMode);
+        if (!policy.TaxPolicy.Enabled || policy.TaxPolicy.Rate == 0m)
+            Tax = 0m;
+        else if (policy.TaxPolicy.PricesIncludeTax)
+        {
+            var net = decimal.Round(Subtotal / (1m + policy.TaxPolicy.Rate), policy.CurrencyScale, policy.RoundingMode);
+            Tax = decimal.Round(Subtotal - net, policy.CurrencyScale, policy.RoundingMode);
+        }
+        else
+            Tax = decimal.Round(Subtotal * policy.TaxPolicy.Rate, policy.CurrencyScale, policy.RoundingMode);
+
+        GrandTotal = policy.TaxPolicy.PricesIncludeTax
+            ? Subtotal
+            : decimal.Round(Subtotal + Tax, policy.CurrencyScale, policy.RoundingMode);
     }
 
     private void RemoveSelectedLine()
