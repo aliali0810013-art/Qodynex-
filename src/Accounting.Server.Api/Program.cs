@@ -6,11 +6,13 @@ using Accounting.SharedKernel;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("AccountingServer")
     ?? throw new InvalidOperationException("ConnectionStrings:AccountingServer is required.");
+var adminConnectionString = builder.Configuration.GetConnectionString("AccountingServerAdmin") ?? connectionString;
 var authority = builder.Configuration["Authentication:Authority"]
     ?? throw new InvalidOperationException("Authentication:Authority is required.");
 var audience = builder.Configuration["Authentication:Audience"]
@@ -66,11 +68,30 @@ builder.Services.AddAuthorization(options =>
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
 {
-    var tenant = scope.ServiceProvider.GetRequiredService<ServerTenantContext>();
-    tenant.SetSystem();
-    await scope.ServiceProvider.GetRequiredService<ServerDatabaseBootstrapper>().InitializeAsync().ConfigureAwait(false);
+    var systemTenant = new ServerTenantContext();
+    systemTenant.SetSystem();
+    var adminOptions = new DbContextOptionsBuilder<ServerAccountingDbContext>()
+        .UseNpgsql(adminConnectionString)
+        .AddInterceptors(new ServerImmutabilityInterceptor())
+        .Options;
+    await using var adminDb = new ServerAccountingDbContext(adminOptions, systemTenant);
+    await new ServerDatabaseBootstrapper(adminDb).InitializeAsync().ConfigureAwait(false);
+}
+
+await using (var runtimeConnection = new NpgsqlConnection(connectionString))
+{
+    await runtimeConnection.OpenAsync().ConfigureAwait(false);
+    await using var roleCheck = runtimeConnection.CreateCommand();
+    roleCheck.CommandText = """
+SELECT rolsuper OR rolbypassrls
+FROM pg_roles
+WHERE rolname = current_user;
+""";
+    var canBypassRls = (bool?)await roleCheck.ExecuteScalarAsync().ConfigureAwait(false) ?? true;
+    if (canBypassRls)
+        throw new InvalidOperationException(
+            "AccountingServer runtime PostgreSQL role must be NOSUPERUSER and NOBYPASSRLS. Use AccountingServerAdmin for schema/RLS bootstrap.");
 }
 
 app.UseMiddleware<ApiExceptionMiddleware>();
