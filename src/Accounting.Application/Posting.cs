@@ -88,11 +88,14 @@ public sealed class AccountingPostingEngine
             var invoice = await _store.GetPurchaseInvoiceAsync(u.CompanyId, u.BranchId, command.InvoiceId, token).ConfigureAwait(false);
             EnsureTenant(u, invoice); var prior = await Existing(invoice, command.Context, token).ConfigureAwait(false); if (prior is not null) return prior;
             if (invoice.Lines.Count == 0) throw new AccountingDomainException("Purchase invoice must contain at least one line.");
-            await _rules.ValidateAsync(invoice, u, token).ConfigureAwait(false); _ = await _store.GetWarehouseAsync(u.CompanyId, u.BranchId, invoice.WarehouseId, token).ConfigureAwait(false);
+            await _rules.ValidateAsync(invoice, u, token).ConfigureAwait(false);
 
             var items = new Dictionary<Guid, Item>();
             foreach (var itemId in invoice.Lines.Select(x => x.ItemId).Distinct()) items[itemId] = await _store.GetItemAsync(u.CompanyId, u.BranchId, itemId, token).ConfigureAwait(false);
-            var accountIds = new HashSet<Guid> { invoice.SettlementAccountId }; foreach (var item in items.Values) accountIds.Add(item.InventoryAccountId);
+            if (items.Values.Any(x => x.ItemKind == ItemKind.Stock))
+                _ = await _store.GetWarehouseAsync(u.CompanyId, u.BranchId, invoice.WarehouseId, token).ConfigureAwait(false);
+            var accountIds = new HashSet<Guid> { invoice.SettlementAccountId };
+            foreach (var item in items.Values) accountIds.Add(item.ItemKind == ItemKind.Stock ? item.InventoryAccountId : item.CogsAccountId);
             if (policy.TaxPolicy.Enabled && policy.TaxPolicy.InputTaxAccountId is Guid inputTax) accountIds.Add(inputTax);
             var accounts = await LoadAccounts(u, accountIds, token).ConfigureAwait(false);
             var now = _clock.UtcNow; var journal = CreateJournal(invoice, command.Context, now, "Purchase invoice"); var stock = new List<StockLedgerEntry>();
@@ -100,12 +103,19 @@ public sealed class AccountingPostingEngine
             foreach (var line in invoice.Lines)
             {
                 var item = items[line.ItemId]; var baseQty = _currency.MultiplyQuantity(line.Quantity, line.BaseUnitsPerUnit, policy);
-                var tax = Tax(line.Quantity, line.UnitPrice, policy); var inventoryCost = policy.TaxPolicy.Enabled && policy.TaxPolicy.InputTaxAccountId.HasValue ? tax.Net : tax.Gross;
-                var unitCost = _currency.Divide(inventoryCost, baseQty, policy, Math.Max(policy.CurrencyScale + 6, 6));
-                journal.AddLine(item.InventoryAccountId, inventoryCost, 0m, $"Purchase {item.Sku}", policy, _currency);
+                var tax = Tax(line.Quantity, line.UnitPrice, policy); var purchaseCost = policy.TaxPolicy.Enabled && policy.TaxPolicy.InputTaxAccountId.HasValue ? tax.Net : tax.Gross;
                 grossTotal = _currency.Add(grossTotal, tax.Gross, policy); inputTaxTotal = _currency.Add(inputTaxTotal, tax.Tax, policy);
+                if (item.ItemKind == ItemKind.Service)
+                {
+                    if (item.CogsAccountId == Guid.Empty) throw new AccountingDomainException($"Service item {item.Sku} requires a service cost account.");
+                    journal.AddLine(item.CogsAccountId, purchaseCost, 0m, $"Service purchase {item.Sku}", policy, _currency);
+                    continue;
+                }
+
+                var unitCost = _currency.Divide(purchaseCost, baseQty, policy, Math.Max(policy.CurrencyScale + 6, 6));
+                journal.AddLine(item.InventoryAccountId, purchaseCost, 0m, $"Purchase {item.Sku}", policy, _currency);
                 var movement = new StockLedgerEntry(u.CompanyId, u.BranchId, item.Id, invoice.WarehouseId, invoice.Id, nameof(PurchaseInvoice), command.Context.OperationId,
-                    StockMovementType.PurchaseReceipt, baseQty, inventoryCost, unitCost, now); stock.Add(movement); _store.Add(movement);
+                    StockMovementType.PurchaseReceipt, baseQty, purchaseCost, unitCost, now); stock.Add(movement); _store.Add(movement);
             }
             if (inputTaxTotal > 0m && policy.TaxPolicy.InputTaxAccountId is Guid taxAccount) journal.AddLine(taxAccount, inputTaxTotal, 0m, "Input tax", policy, _currency);
             journal.AddLine(invoice.SettlementAccountId, 0m, grossTotal, "Purchase settlement", policy, _currency);
@@ -126,11 +136,17 @@ public sealed class AccountingPostingEngine
             EnsureTenant(u, invoice); var prior = await Existing(invoice, command.Context, token).ConfigureAwait(false); if (prior is not null) return prior;
             if (invoice.Lines.Count == 0) throw new AccountingDomainException("Sales invoice must contain at least one line.");
             await _rules.ValidateAsync(invoice, u, token).ConfigureAwait(false);
-            var warehouse = await _store.GetWarehouseAsync(u.CompanyId, u.BranchId, invoice.WarehouseId, token).ConfigureAwait(false);
             var items = new Dictionary<Guid, Item>(); foreach (var itemId in invoice.Lines.Select(x => x.ItemId).Distinct()) items[itemId] = await _store.GetItemAsync(u.CompanyId, u.BranchId, itemId, token).ConfigureAwait(false);
+            Warehouse? warehouse = null;
+            if (items.Values.Any(x => x.ItemKind == ItemKind.Stock))
+                warehouse = await _store.GetWarehouseAsync(u.CompanyId, u.BranchId, invoice.WarehouseId, token).ConfigureAwait(false);
 
             var accountIds = new HashSet<Guid> { invoice.SettlementAccountId };
-            foreach (var item in items.Values) { accountIds.Add(item.SalesRevenueAccountId); accountIds.Add(item.InventoryAccountId); accountIds.Add(item.CogsAccountId); }
+            foreach (var item in items.Values)
+            {
+                accountIds.Add(item.SalesRevenueAccountId);
+                if (item.ItemKind == ItemKind.Stock) { accountIds.Add(item.InventoryAccountId); accountIds.Add(item.CogsAccountId); }
+            }
             if (policy.TaxPolicy.Enabled && policy.TaxPolicy.OutputTaxAccountId is Guid outputTax) accountIds.Add(outputTax);
             var accounts = await LoadAccounts(u, accountIds, token).ConfigureAwait(false);
             var now = _clock.UtcNow; var journal = CreateJournal(invoice, command.Context, now, "Sales invoice"); var stock = new List<StockLedgerEntry>();
@@ -147,7 +163,10 @@ public sealed class AccountingPostingEngine
 
             foreach (var group in invoice.Lines.GroupBy(x => x.ItemId))
             {
-                var item = items[group.Key]; decimal baseQty = 0m;
+                var item = items[group.Key];
+                if (item.ItemKind == ItemKind.Service) continue;
+                if (warehouse is null) throw new AccountingDomainException("Warehouse is required for stock items.");
+                decimal baseQty = 0m;
                 foreach (var line in group) baseQty = _currency.AddQuantity(baseQty, _currency.MultiplyQuantity(line.Quantity, line.BaseUnitsPerUnit, policy), policy);
                 var ledger = await _store.GetStockLedgerAsync(u.CompanyId, u.BranchId, item.Id, invoice.WarehouseId, token).ConfigureAwait(false);
                 var issue = _inventory.CalculateIssue(ledger, baseQty, policy, warehouse.AllowsNegativeStock(policy));
@@ -236,8 +255,33 @@ public sealed class AccountingPostingEngine
     {
         var after = JsonSerializer.Serialize(new { JournalEntryId = journal.Id, StockLedgerEntryIds = stock.Select(x => x.Id).ToArray(), context.OperationId, context.IdempotencyKey });
         _store.Add(new AuditLog(u.CompanyId, u.BranchId, u.UserId, u.DeviceId, action, document.Id, document.GetType().Name, "{}", after, now));
-        var payload = JsonSerializer.Serialize(new { DocumentId = document.Id, JournalEntryId = journal.Id, StockLedgerEntryIds = stock.Select(x => x.Id).ToArray(), context.OperationId, document.LocalTempNumber });
+        var payload = JsonSerializer.Serialize(BuildSyncPayload(document, journal, stock));
         _store.Add(new OutboxMessage(u.CompanyId, u.BranchId, context.OperationId, context.IdempotencyKey, payload, action, now));
+    }
+
+    private static PostedOperationSyncPayload BuildSyncPayload(CommercialDocument document, JournalEntry journal, IReadOnlyCollection<StockLedgerEntry> stock)
+    {
+        Guid? partnerId = null, warehouseId = null, primaryAccountId = null, counterAccountId = null;
+        switch (document)
+        {
+            case SalesInvoice sales:
+                partnerId = sales.BusinessPartnerId; warehouseId = sales.WarehouseId; primaryAccountId = sales.SettlementAccountId; break;
+            case PurchaseInvoice purchase:
+                partnerId = purchase.BusinessPartnerId; warehouseId = purchase.WarehouseId; primaryAccountId = purchase.SettlementAccountId; break;
+            case ReceiptVoucher receipt:
+                partnerId = receipt.BusinessPartnerId; primaryAccountId = receipt.CashOrBankAccountId; counterAccountId = receipt.CounterAccountId; break;
+            case PaymentVoucher payment:
+                partnerId = payment.BusinessPartnerId; primaryAccountId = payment.CashOrBankAccountId; counterAccountId = payment.CounterAccountId; break;
+        }
+
+        return new PostedOperationSyncPayload(
+            new PostedDocumentSyncRecord(document.Id, document.CompanyId, document.BranchId, document.GetType().Name, document.ModuleKey,
+                document.LocalTempNumber, document.DocumentDateUtc, partnerId, warehouseId, primaryAccountId, counterAccountId),
+            new PostedJournalSyncRecord(journal.Id, journal.CompanyId, journal.BranchId, journal.SourceDocumentId, journal.SourceDocumentType,
+                journal.OperationId, journal.IdempotencyKey, journal.EntryDateUtc, journal.Description, journal.Reference, journal.ReversedEntryId,
+                journal.Lines.Select(x => new PostedJournalLineSyncRecord(x.Id, x.AccountId, x.Debit, x.Credit, x.Memo)).ToArray()),
+            stock.Select(x => new PostedStockLedgerSyncRecord(x.Id, x.ItemId, x.WarehouseId, x.SourceDocumentId, x.SourceDocumentType,
+                x.OperationId, (int)x.MovementType, x.QuantityDelta, x.InventoryValueDelta, x.UnitCost, x.ReversedStockLedgerEntryId, x.PostedAtUtc)).ToArray());
     }
 
     private static void EnsureTenant(UserContext u, TenantEntity entity)
