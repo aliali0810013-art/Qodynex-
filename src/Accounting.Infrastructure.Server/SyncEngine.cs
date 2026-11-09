@@ -65,6 +65,30 @@ public sealed class SyncPushCommandHandler
             acknowledgements);
     }
 
+    private async Task AcquireIdempotencyLockAsync(SyncEnvelope envelope, CancellationToken cancellationToken)
+    {
+        var key = $"idem:{envelope.CompanyId:N}:{envelope.BranchId:N}:{envelope.IdempotencyKey}";
+        await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({key}, 0));",
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task AcquireInventoryLocksAsync(PostedOperationSyncPayload payload, CancellationToken cancellationToken)
+    {
+        var keys = payload.StockEntries
+            .Select(x => $"stock:{payload.Document.CompanyId:N}:{payload.Document.BranchId:N}:{x.ItemId:N}:{x.WarehouseId:N}")
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(x => x, StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var key in keys)
+        {
+            await _db.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock(hashtextextended({key}, 0));",
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private void DemandPermission(SyncEnvelope envelope)
     {
         var required = string.Equals(envelope.EventType, "ReversePostedDocument", StringComparison.OrdinalIgnoreCase)
@@ -79,6 +103,7 @@ public sealed class SyncPushCommandHandler
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
         await _session.ApplyAsync(cancellationToken).ConfigureAwait(false);
         await DemandActiveDeviceAsync(cancellationToken).ConfigureAwait(false);
+        await AcquireIdempotencyLockAsync(envelope, cancellationToken).ConfigureAwait(false);
 
         var existing = await _db.InboxMessages.SingleOrDefaultAsync(
             x => x.IdempotencyKey == envelope.IdempotencyKey,
@@ -103,6 +128,7 @@ public sealed class SyncPushCommandHandler
             ValidateEnvelope(payload, envelope);
             var policy = await GetPolicyAsync(cancellationToken).ConfigureAwait(false);
             await ValidateJournalAsync(payload, policy, cancellationToken).ConfigureAwait(false);
+            await AcquireInventoryLocksAsync(payload, cancellationToken).ConfigureAwait(false);
             if (!payload.Journal.ReversedEntryId.HasValue)
                 await ValidateDocumentAccountingAsync(payload, policy, cancellationToken).ConfigureAwait(false);
             await ValidateStockAsync(payload, policy, cancellationToken).ConfigureAwait(false);
