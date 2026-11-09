@@ -40,8 +40,11 @@ public sealed class EfAccountingDataStore : IAccountingDataStore
     public async Task<IReadOnlyList<Account>> GetAccountsAsync(Guid c, Guid b, IEnumerable<Guid> ids, CancellationToken ct)
     { var list = ids.Distinct().ToArray(); return await _db.Accounts.Where(x => x.CompanyId == c && x.BranchId == b && list.Contains(x.Id)).ToListAsync(ct); }
 
-    public async Task<IReadOnlyList<StockLedgerEntry>> GetStockLedgerAsync(Guid c, Guid b, Guid itemId, Guid warehouseId, CancellationToken ct) =>
-        await _db.StockLedgerEntries.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.ItemId == itemId && x.WarehouseId == warehouseId).OrderBy(x => x.PostedAtUtc).ThenBy(x => x.Id).ToListAsync(ct);
+    public async Task<IReadOnlyList<StockLedgerEntry>> GetStockLedgerAsync(Guid c, Guid b, Guid itemId, Guid warehouseId, CancellationToken ct)
+    {
+        var entries = await _db.StockLedgerEntries.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.ItemId == itemId && x.WarehouseId == warehouseId).ToListAsync(ct).ConfigureAwait(false);
+        return entries.OrderBy(x => x.PostedAtUtc).ThenBy(x => x.Id).ToList();
+    }
 
     public async Task<IReadOnlyList<JournalLine>> GetPostedJournalLinesAsync(Guid c, Guid b, Guid accountId, CancellationToken ct) =>
         await (from line in _db.JournalLines.AsNoTracking()
@@ -67,8 +70,11 @@ public sealed class EfAccountingDataStore : IAccountingDataStore
                       select line).ToListAsync(ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<StockLedgerEntry>> GetStockBySourceDocumentAsync(Guid c, Guid b, Guid documentId, CancellationToken ct) =>
-        await _db.StockLedgerEntries.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.SourceDocumentId == documentId).OrderBy(x => x.PostedAtUtc).ThenBy(x => x.Id).ToListAsync(ct);
+    public async Task<IReadOnlyList<StockLedgerEntry>> GetStockBySourceDocumentAsync(Guid c, Guid b, Guid documentId, CancellationToken ct)
+    {
+        var entries = await _db.StockLedgerEntries.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.SourceDocumentId == documentId).ToListAsync(ct).ConfigureAwait(false);
+        return entries.OrderBy(x => x.PostedAtUtc).ThenBy(x => x.Id).ToList();
+    }
 
     public Task<JournalEntry?> FindJournalByIdempotencyKeyAsync(Guid c, Guid b, string key, CancellationToken ct) =>
         _db.JournalEntries.Include(x => x.Lines).SingleOrDefaultAsync(x => x.CompanyId == c && x.BranchId == b && x.IdempotencyKey == key, ct);
