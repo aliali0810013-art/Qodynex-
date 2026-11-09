@@ -29,6 +29,7 @@
     <Using Include="Microsoft.Maui.Graphics" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" />
     <PackageReference Include="ZXing.Net.Maui.Controls" />
   </ItemGroup>
 </Project>
