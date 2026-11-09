@@ -45,7 +45,8 @@ public sealed class RestaurantPostingRule : IDocumentPostingRule
         RestaurantOrderMetadata? metadata;
         try
         {
-            metadata = JsonSerializer.Deserialize<RestaurantOrderMetadata>(document.ModuleMetadataJson);
+            metadata = JsonSerializer.Deserialize<RestaurantOrderMetadata>(document.ModuleMetadataJson,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         }
         catch (JsonException ex)
         {
