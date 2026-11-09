@@ -12,6 +12,7 @@ public interface IServerTenantContext
     IReadOnlySet<string> RoleClaims { get; }
     bool IsAuthenticated { get; }
     bool IsSystem { get; }
+    void DemandTenant(Guid companyId, Guid branchId);
 }
 
 public sealed class ServerTenantContext : IServerTenantContext
