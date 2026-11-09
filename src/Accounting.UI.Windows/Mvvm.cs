@@ -48,6 +48,17 @@ public sealed class RelayCommand : ICommand
     public void Refresh() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }
 
+public sealed class ParameterCommand : ICommand
+{
+    private readonly Action<object?> _execute;
+    private readonly Func<object?, bool>? _canExecute;
+    public ParameterCommand(Action<object?> execute, Func<object?, bool>? canExecute = null) { _execute = execute; _canExecute = canExecute; }
+    public bool CanExecute(object? parameter) => _canExecute?.Invoke(parameter) ?? true;
+    public event EventHandler? CanExecuteChanged;
+    public void Execute(object? parameter) => _execute(parameter);
+    public void Refresh() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+}
+
 public interface IWorkspaceActionTarget
 {
     Task SaveAndPostAsync();
