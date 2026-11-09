@@ -245,7 +245,9 @@ public sealed class SecondHalfAcceptanceTests
                 wholesaleServer.ReceivableAccountId, wholesaleServer.CustomerId, 2m, 100m,
                 WholesaleModule.ModuleKey, "wholesale-over-limit"));
         Assert.Contains("credit limit", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, await wholesale.Db.SalesInvoices.CountAsync());
         Assert.Equal(0, await wholesale.Db.JournalEntries.CountAsync(x => x.SourceDocumentType == nameof(SalesInvoice)));
+        Assert.Equal(0, await wholesale.Db.OutboxMessages.CountAsync());
     }
 
     [Fact]
