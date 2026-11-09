@@ -146,6 +146,10 @@ public sealed class SecondHalfAcceptanceTests
         await windowsServer.RegisterAsync();
         var windowsBootstrap = await windowsServer.GetBootstrapAsync();
         await using var windows = await LocalDeviceHarness.CreateAsync(windowsBootstrap, windowsServer.UserId, windowsServer.DeviceId);
+        Assert.True(await windows.Db.ItemUnitConversions.AsNoTracking().AnyAsync(x =>
+            x.ItemId == androidServer.StockItemId
+            && x.UnitOfMeasureId == androidServer.CartonUnitId
+            && x.BaseUnitsPerUnit == 24m));
         var windowsCoordinator = new BackgroundSyncCoordinator(windowsServer.Transport(), windows.SyncStore,
             new AlwaysOnlineNetwork(), windows.User, windowsServer.Clock);
 
