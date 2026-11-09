@@ -53,6 +53,7 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
 
     public string Title => _isSales ? "فاتورة مبيعات" : "فاتورة مشتريات";
     public string ModuleKey { get; set; }
+    public bool RequiresWarehouse => !string.Equals(ModuleKey, ServicesModule.ModuleKey, StringComparison.OrdinalIgnoreCase);
     public string ModuleMetadataJson { get; set; } = "{}";
     public string WarehouseIdText { get; set; } = string.Empty;
     public string SettlementAccountIdText { get; set; } = string.Empty;
