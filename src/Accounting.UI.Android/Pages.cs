@@ -122,7 +122,7 @@ public sealed class SetupPage : ContentPage
 
             _status.Text = "جارٍ تسجيل الجهاز وتنزيل سياسة الشركة والبيانات الأساسية...";
             await _runtime.InitializeAsync().ConfigureAwait(true);
-            Application.Current!.MainPage = new NavigationPage(new HomePage(_runtime));
+            Microsoft.Maui.Controls.Application.Current!.MainPage = new NavigationPage(new HomePage(_runtime));
             _runtime.StartSyncLoop();
         }
         catch (Exception ex)
