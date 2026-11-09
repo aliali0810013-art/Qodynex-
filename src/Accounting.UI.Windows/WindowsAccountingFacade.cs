@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Accounting.UI.Windows;
 
 public sealed record ItemLookup(Guid Id, string Sku, string Name, string? Barcode, Guid BaseUnitOfMeasureId, ItemKind ItemKind);
+public sealed record ItemUnitOption(Guid UnitOfMeasureId, string Code, string Name, decimal BaseUnitsPerUnit);
 public sealed record PartnerLookup(Guid Id, string Code, string Name, Guid ControlAccountId, decimal CreditLimit);
 public sealed record AccountLookup(Guid Id, string Code, string Name);
 public sealed record InvoiceDraftLine(Guid ItemId, Guid UnitOfMeasureId, decimal Quantity, decimal BaseUnitsPerUnit, decimal UnitPrice);
@@ -82,6 +83,32 @@ public sealed class WindowsAccountingFacade
             .Select(x => new ItemMovementRow(x.PostedAtUtc, x.SourceDocumentType, x.QuantityDelta, x.InventoryValueDelta, x.UnitCost))
             .Take(500)
             .ToListAsync(ct).ConfigureAwait(false);
+
+    public async Task<IReadOnlyList<ItemUnitOption>> GetItemUnitsAsync(Guid itemId, CancellationToken ct = default)
+    {
+        var item = await _db.Items.AsNoTracking()
+            .SingleAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.Id == itemId, ct)
+            .ConfigureAwait(false);
+        var baseUnit = await _db.UnitOfMeasures.AsNoTracking()
+            .SingleAsync(x => x.Id == item.BaseUnitOfMeasureId, ct)
+            .ConfigureAwait(false);
+        var result = new List<ItemUnitOption>
+        {
+            new(baseUnit.Id, baseUnit.Code, baseUnit.Name, 1m)
+        };
+
+        var conversions = await (from conversion in _db.ItemUnitConversions.AsNoTracking()
+                                 join unit in _db.UnitOfMeasures.AsNoTracking() on conversion.UnitOfMeasureId equals unit.Id
+                                 where conversion.CompanyId == _user.CompanyId
+                                       && conversion.BranchId == _user.BranchId
+                                       && conversion.ItemId == itemId
+                                       && conversion.UnitOfMeasureId != item.BaseUnitOfMeasureId
+                                 orderby conversion.BaseUnitsPerUnit
+                                 select new ItemUnitOption(unit.Id, unit.Code, unit.Name, conversion.BaseUnitsPerUnit))
+            .ToListAsync(ct).ConfigureAwait(false);
+        result.AddRange(conversions);
+        return result;
+    }
 
     public async Task<decimal> GetSuggestedUnitPriceAsync(string moduleKey, Guid itemId, decimal baseQuantity, decimal fallback, CancellationToken ct = default)
     {
