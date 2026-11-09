@@ -97,6 +97,7 @@ public sealed record PostedDocumentSyncRecord(
     Guid BranchId,
     string DocumentType,
     string ModuleKey,
+    string ModuleMetadataJson,
     string LocalTempNumber,
     DateTimeOffset DocumentDateUtc,
     Guid? BusinessPartnerId,
