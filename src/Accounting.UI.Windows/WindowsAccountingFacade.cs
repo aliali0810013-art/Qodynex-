@@ -11,6 +11,7 @@ public sealed record PartnerLookup(Guid Id, string Code, string Name, Guid Contr
 public sealed record AccountLookup(Guid Id, string Code, string Name);
 public sealed record InvoiceDraftLine(Guid ItemId, Guid UnitOfMeasureId, decimal Quantity, decimal BaseUnitsPerUnit, decimal UnitPrice);
 public sealed record LedgerRow(DateTimeOffset DateUtc, string Reference, string Description, decimal Debit, decimal Credit, decimal RunningBalance);
+public sealed record ItemMovementRow(DateTimeOffset DateUtc, string SourceType, decimal QuantityDelta, decimal InventoryValueDelta, decimal UnitCost);
 public sealed record TrialBalanceRow(Guid AccountId, string Code, string Name, decimal Debit, decimal Credit, decimal Balance);
 
 public sealed class WindowsAccountingFacade
@@ -72,6 +73,14 @@ public sealed class WindowsAccountingFacade
 
     public Task<StockPosition> GetStockPositionAsync(Guid itemId, Guid warehouseId, CancellationToken ct = default) =>
         _queries.GetStockPositionAsync(_user, itemId, warehouseId, ct);
+
+    public async Task<IReadOnlyList<ItemMovementRow>> GetItemMovementAsync(Guid itemId, Guid warehouseId, CancellationToken ct = default) =>
+        await _db.StockLedgerEntries.AsNoTracking()
+            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.ItemId == itemId && x.WarehouseId == warehouseId)
+            .OrderByDescending(x => x.PostedAtUtc)
+            .Select(x => new ItemMovementRow(x.PostedAtUtc, x.SourceDocumentType, x.QuantityDelta, x.InventoryValueDelta, x.UnitCost))
+            .Take(500)
+            .ToListAsync(ct).ConfigureAwait(false);
 
     public async Task<CompanyPolicy> GetPolicyAsync(CancellationToken ct = default) =>
         (await _db.Companies.AsNoTracking().SingleAsync(x => x.Id == _user.CompanyId, ct).ConfigureAwait(false)).GetPolicy();
