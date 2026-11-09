@@ -20,6 +20,7 @@ public sealed record TenantBootstrapResult(
     IReadOnlyList<ItemMasterSyncRecord> Items,
     IReadOnlyList<WarehouseMasterSyncRecord> Warehouses,
     IReadOnlyList<string> EnabledModules,
+    IReadOnlyList<ModuleConfigurationSyncRecord> ModuleConfigurations,
     IReadOnlyList<string> GrantedPermissionCodes,
     DateTimeOffset ServerTimestampUtc);
 
@@ -78,3 +79,7 @@ public sealed record WarehouseMasterSyncRecord(
     string Code,
     string Name,
     bool? AllowNegativeStockOverride);
+
+public sealed record ModuleConfigurationSyncRecord(
+    string ModuleKey,
+    string ConfigurationJson);
