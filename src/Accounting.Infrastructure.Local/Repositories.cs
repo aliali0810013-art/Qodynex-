@@ -50,6 +50,23 @@ public sealed class EfAccountingDataStore : IAccountingDataStore
                orderby entry.EntryDateUtc, line.Id
                select line).ToListAsync(ct);
 
+    public async Task<IReadOnlyList<JournalLine>> GetPostedJournalLinesForBusinessPartnerAsync(Guid c, Guid b, Guid partnerId, Guid accountId, CancellationToken ct)
+    {
+        var sourceIds = new HashSet<Guid>();
+        foreach (var id in await _db.SalesInvoices.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.BusinessPartnerId == partnerId).Select(x => x.Id).ToListAsync(ct).ConfigureAwait(false)) sourceIds.Add(id);
+        foreach (var id in await _db.PurchaseInvoices.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.BusinessPartnerId == partnerId).Select(x => x.Id).ToListAsync(ct).ConfigureAwait(false)) sourceIds.Add(id);
+        foreach (var id in await _db.ReceiptVouchers.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.BusinessPartnerId == partnerId).Select(x => x.Id).ToListAsync(ct).ConfigureAwait(false)) sourceIds.Add(id);
+        foreach (var id in await _db.PaymentVouchers.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.BusinessPartnerId == partnerId).Select(x => x.Id).ToListAsync(ct).ConfigureAwait(false)) sourceIds.Add(id);
+
+        if (sourceIds.Count == 0) return Array.Empty<JournalLine>();
+        return await (from line in _db.JournalLines.AsNoTracking()
+                      join entry in _db.JournalEntries.AsNoTracking() on line.JournalEntryId equals entry.Id
+                      where line.CompanyId == c && line.BranchId == b && line.AccountId == accountId
+                            && entry.Status == PostingStatus.Posted && sourceIds.Contains(entry.SourceDocumentId)
+                      orderby entry.EntryDateUtc, line.Id
+                      select line).ToListAsync(ct).ConfigureAwait(false);
+    }
+
     public async Task<IReadOnlyList<StockLedgerEntry>> GetStockBySourceDocumentAsync(Guid c, Guid b, Guid documentId, CancellationToken ct) =>
         await _db.StockLedgerEntries.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.SourceDocumentId == documentId).OrderBy(x => x.PostedAtUtc).ThenBy(x => x.Id).ToListAsync(ct);
 
