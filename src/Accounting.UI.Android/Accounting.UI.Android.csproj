@@ -4,6 +4,7 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>Accounting.UI.Android</RootNamespace>
     <UseMaui>true</UseMaui>
+    <ImplicitUsings>enable</ImplicitUsings>
     <SingleProject>true</SingleProject>
     <AndroidManifest>Platforms/Android/AndroidManifest.xml</AndroidManifest>
     <ApplicationTitle>Qodynex</ApplicationTitle>
@@ -19,6 +20,13 @@
     <ProjectReference Include="../Accounting.Modules/Accounting.Modules.csproj" />
     <ProjectReference Include="../Accounting.SharedKernel/Accounting.SharedKernel.csproj" />
     <ProjectReference Include="../Accounting.Sync.Client/Accounting.Sync.Client.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Microsoft.Maui" />
+    <Using Include="Microsoft.Maui.Controls" />
+    <Using Include="Microsoft.Maui.Hosting" />
+    <Using Include="Microsoft.Maui.ApplicationModel" />
+    <Using Include="Microsoft.Maui.Graphics" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ZXing.Net.Maui.Controls" />
