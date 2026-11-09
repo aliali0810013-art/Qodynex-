@@ -168,7 +168,7 @@ public sealed class HomePage : ContentPage
                 var key = (string)((Button)sender!).CommandParameter;
                 await Navigation.PushAsync(new SalePage(_runtime, key));
             };
-            _moduleButtons.Add(button);
+            _moduleButtons.Children.Add(button);
         }
 
         Content = new ScrollView
@@ -329,7 +329,13 @@ public sealed class SalePage : ContentPage
                 {
                     RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto) },
                     ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) },
-                    Children = { _warehouse, _settlement, _partner, _serviceType }
+                    Children =
+                    {
+                        _warehouse.Position(0,0),
+                        _settlement.Position(1,0),
+                        _partner.Position(0,1),
+                        _serviceType.Position(1,1)
+                    }
                 }.Position(0,1),
                 new Label { Text = "الصنف    | الكمية | السعر", FontAttributes = FontAttributes.Bold }.Position(0,2),
                 list.Position(0,3),
@@ -649,7 +655,7 @@ public sealed class ConflictsPage : ContentPage
                 code.SetBinding(Label.TextProperty, nameof(LocalConflictRow.Code));
                 var message = new Label(); message.SetBinding(Label.TextProperty, nameof(LocalConflictRow.Message));
                 var date = new Label { FontSize = 12 }; date.SetBinding(Label.TextProperty, new Binding(nameof(LocalConflictRow.DateUtc), stringFormat: "{0:yyyy-MM-dd HH:mm}"));
-                stack.Add(code); stack.Add(message); stack.Add(date); return stack;
+                stack.Children.Add(code); stack.Children.Add(message); stack.Children.Add(date); return stack;
             })
         };
         Appearing += async (_, _) =>
