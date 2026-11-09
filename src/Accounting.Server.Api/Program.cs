@@ -134,8 +134,40 @@ app.MapPost("/api/v1/devices/register", async (DeviceRegistrationRequest request
 app.MapPost("/api/v1/tenant/bootstrap", async (TenantBootstrapRequest request, TenantBootstrapService service, CancellationToken ct) =>
     Results.Ok(await service.GetAsync(request, ct).ConfigureAwait(false))).RequireAuthorization();
 
+app.MapGet("/api/v1/session", async (ServerAccountingDbContext db, IServerTenantContext tenant, TenantPostgresSession session, CancellationToken ct) =>
+{
+    await using var tx = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+    await session.ApplyAsync(ct).ConfigureAwait(false);
+    var device = await db.DeviceRegistrations.AsNoTracking()
+        .SingleOrDefaultAsync(x => x.DeviceId == tenant.DeviceId, ct)
+        .ConfigureAwait(false);
+    await tx.CommitAsync(ct).ConfigureAwait(false);
+    return device is null
+        ? Results.NotFound()
+        : Results.Ok(new
+        {
+            tenant.CompanyId,
+            tenant.BranchId,
+            tenant.UserId,
+            tenant.DeviceId,
+            Roles = tenant.RoleClaims.OrderBy(x => x, StringComparer.OrdinalIgnoreCase),
+            device.IsActive,
+            device.ClientVersion,
+            device.ClientSchemaVersion,
+            device.ProtocolVersion,
+            CurrentSchemaVersion = SyncProtocol.CurrentClientSchemaVersion,
+            CurrentProtocolVersion = SyncProtocol.CurrentProtocolVersion
+        });
+}).RequireAuthorization();
+
 app.MapPost("/api/v1/admin/tenant/configure", async (TenantConfigurationRequest request, TenantAdministrationService service, CancellationToken ct) =>
     Results.Ok(await service.ConfigureAsync(request, ct).ConfigureAwait(false))).RequireAuthorization("TenantAdmin");
+
+app.MapPost("/api/v1/admin/devices/{deviceId:guid}/state", async (Guid deviceId, bool isActive, DeviceRegistrationService service, CancellationToken ct) =>
+{
+    var device = await service.SetActiveAsync(deviceId, isActive, ct).ConfigureAwait(false);
+    return Results.Ok(new { device.DeviceId, device.IsActive, device.LastSeenAtUtc });
+}).RequireAuthorization("TenantAdmin");
 
 app.MapGet("/api/v1/admin/devices", async (ServerAccountingDbContext db, TenantPostgresSession session, CancellationToken ct) =>
 {
