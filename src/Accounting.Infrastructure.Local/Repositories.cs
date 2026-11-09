@@ -34,6 +34,9 @@ public sealed class EfAccountingDataStore : IAccountingDataStore
     public async Task<Item> GetItemAsync(Guid c, Guid b, Guid id, CancellationToken ct) =>
         await _db.Items.SingleOrDefaultAsync(x => x.CompanyId == c && x.BranchId == b && x.Id == id, ct) ?? throw new AccountingDomainException("Item not found.");
 
+    public async Task<BusinessPartner> GetBusinessPartnerAsync(Guid c, Guid b, Guid id, CancellationToken ct) =>
+        await _db.BusinessPartners.SingleOrDefaultAsync(x => x.CompanyId == c && x.BranchId == b && x.Id == id, ct) ?? throw new AccountingDomainException("Business partner not found.");
+
     public async Task<IReadOnlyList<Account>> GetAccountsAsync(Guid c, Guid b, IEnumerable<Guid> ids, CancellationToken ct)
     { var list = ids.Distinct().ToArray(); return await _db.Accounts.Where(x => x.CompanyId == c && x.BranchId == b && list.Contains(x.Id)).ToListAsync(ct); }
 
