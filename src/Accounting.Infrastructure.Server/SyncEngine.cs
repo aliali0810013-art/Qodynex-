@@ -388,10 +388,29 @@ public sealed class SyncPushCommandHandler
         var items = await _db.Items.Where(x => itemIds.Contains(x.Id)).ToListAsync(cancellationToken).ConfigureAwait(false);
         if (items.Count != itemIds.Length) throw new AccountingDomainException("One or more invoice items do not exist on the server.");
 
+        var moduleKey = payload.Document.ModuleKey.Trim().ToUpperInvariant();
+        if (moduleKey == "SERVICES" && items.Any(x => x.ItemKind != ItemKind.Service))
+            throw new AccountingDomainException("Services module documents cannot contain stock items.");
+        if (moduleKey == "RETAIL" && items.Any(x => x.ItemKind != ItemKind.Stock))
+            throw new AccountingDomainException("Retail module documents cannot contain service items.");
+        if (moduleKey == "RESTAURANT")
+        {
+            if (payload.Document.DocumentType != "SalesInvoice")
+                throw new AccountingDomainException("Restaurant module posts through SalesInvoice only.");
+            using var restaurantMetadata = JsonDocument.Parse(payload.Document.ModuleMetadataJson);
+            var root = restaurantMetadata.RootElement;
+            JsonElement serviceTypeElement;
+            if (!(root.TryGetProperty("serviceType", out serviceTypeElement) || root.TryGetProperty("ServiceType", out serviceTypeElement))
+                || !serviceTypeElement.TryGetInt32(out var serviceType) || serviceType is < 1 or > 3)
+                throw new AccountingDomainException("Restaurant service type DineIn/Takeaway/Delivery is required.");
+        }
+
         decimal gross = 0m, taxTotal = 0m;
         var accountNet = new Dictionary<Guid, decimal>();
         var expectedStockQty = new Dictionary<Guid, decimal>();
         var expectedPurchaseValue = new Dictionary<Guid, decimal>();
+        var expectedCogsByAccount = new Dictionary<Guid, decimal>();
+        var expectedInventoryCreditByAccount = new Dictionary<Guid, decimal>();
 
         foreach (var line in payload.Document.Lines)
         {
@@ -468,9 +487,47 @@ public sealed class SyncPushCommandHandler
                         $"Offline COGS for item {expected.Key} is {actualValue}, while authoritative server COGS is {valuation.TotalCost}.");
 
                 var item = items.Single(x => x.Id == expected.Key);
-                if (Debit(item.CogsAccountId) != valuation.TotalCost || Credit(item.InventoryAccountId) != valuation.TotalCost)
+                expectedCogsByAccount[item.CogsAccountId] = expectedCogsByAccount.TryGetValue(item.CogsAccountId, out var cogs)
+                    ? _currency.Add(cogs, valuation.TotalCost, policy) : valuation.TotalCost;
+                expectedInventoryCreditByAccount[item.InventoryAccountId] = expectedInventoryCreditByAccount.TryGetValue(item.InventoryAccountId, out var inventoryCredit)
+                    ? _currency.Add(inventoryCredit, valuation.TotalCost, policy) : valuation.TotalCost;
+            }
+
+            foreach (var expected in expectedCogsByAccount)
+                if (Debit(expected.Key) != _currency.RoundMoney(expected.Value, policy))
                     throw new ServerSyncConflictException("INVENTORY_COST_CONFLICT",
-                        $"Offline journal COGS for item {expected.Key} does not match authoritative server valuation.");
+                        $"Offline journal COGS account {expected.Key} does not match authoritative server valuation.");
+            foreach (var expected in expectedInventoryCreditByAccount)
+                if (Credit(expected.Key) != _currency.RoundMoney(expected.Value, policy))
+                    throw new ServerSyncConflictException("INVENTORY_COST_CONFLICT",
+                        $"Offline inventory credit account {expected.Key} does not match authoritative server valuation.");
+
+            if (moduleKey == "WHOLESALE" && payload.Document.BusinessPartnerId is Guid partnerId)
+            {
+                var partner = await _db.BusinessPartners.AsNoTracking().SingleOrDefaultAsync(x => x.Id == partnerId, cancellationToken).ConfigureAwait(false)
+                              ?? throw new AccountingDomainException("Wholesale customer does not exist.");
+                if (settlement == partner.ControlAccountId)
+                {
+                    var account = await _db.Accounts.AsNoTracking().SingleAsync(x => x.Id == partner.ControlAccountId, cancellationToken).ConfigureAwait(false);
+                    var sourceDocumentIds = _db.FinancialDocuments.AsNoTracking()
+                        .Where(x => x.BusinessPartnerId == partner.Id)
+                        .Select(x => x.Id);
+                    var totals = await (from entry in _db.JournalEntries.AsNoTracking()
+                                        join line in _db.JournalLines.AsNoTracking() on entry.Id equals line.JournalEntryId
+                                        where sourceDocumentIds.Contains(entry.SourceDocumentId) && line.AccountId == partner.ControlAccountId
+                                        group line by 1 into g
+                                        select new { Debit = g.Sum(x => x.Debit), Credit = g.Sum(x => x.Credit) })
+                        .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+                    var debitTotal = totals?.Debit ?? 0m;
+                    var creditTotal = totals?.Credit ?? 0m;
+                    var currentExposure = account.NormalBalance == NormalBalance.Debit
+                        ? _currency.Subtract(debitTotal, creditTotal, policy)
+                        : _currency.Subtract(creditTotal, debitTotal, policy);
+                    var exposureAfterInvoice = _currency.Add(Math.Max(0m, currentExposure), gross, policy);
+                    if (exposureAfterInvoice > partner.CreditLimit)
+                        throw new ServerSyncConflictException("CREDIT_LIMIT_CONFLICT",
+                            $"Wholesale customer credit limit exceeded. Limit={partner.CreditLimit}, exposure={exposureAfterInvoice}.");
+                }
             }
         }
         else
