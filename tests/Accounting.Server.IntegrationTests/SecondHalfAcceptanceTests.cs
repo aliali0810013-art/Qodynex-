@@ -259,6 +259,16 @@ public sealed class SecondHalfAcceptanceTests
         var clock = new MutableClock(new DateTimeOffset(2026, 11, 10, 2, 0, 0, TimeSpan.Zero));
         var roles = new[] { "tenant.admin", "accounting.post" };
 
+        await using (var rolledBackTenant = database.CreateTenant(companyId, branchId, userId, deviceId, roles, clock))
+        {
+            await using var rolledBackTransaction = await rolledBackTenant.Db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
+            await rolledBackTenant.Session.ApplyAsync();
+            var rolledBackNumber = await new OfficialSequenceGenerator(rolledBackTenant.Db)
+                .NextAsync(nameof(SalesInvoice), clock.UtcNow);
+            Assert.Equal(1, rolledBackNumber.Sequence);
+            await rolledBackTransaction.RollbackAsync();
+        }
+
         var tasks = Enumerable.Range(0, 20).Select(async _ =>
         {
             await using var tenant = database.CreateTenant(companyId, branchId, userId, deviceId, roles, clock);
