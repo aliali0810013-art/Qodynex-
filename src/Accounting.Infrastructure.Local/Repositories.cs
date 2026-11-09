@@ -40,6 +40,13 @@ public sealed class EfAccountingDataStore : IAccountingDataStore
     public async Task<IReadOnlyList<StockLedgerEntry>> GetStockLedgerAsync(Guid c, Guid b, Guid itemId, Guid warehouseId, CancellationToken ct) =>
         await _db.StockLedgerEntries.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.ItemId == itemId && x.WarehouseId == warehouseId).OrderBy(x => x.PostedAtUtc).ThenBy(x => x.Id).ToListAsync(ct);
 
+    public async Task<IReadOnlyList<JournalLine>> GetPostedJournalLinesAsync(Guid c, Guid b, Guid accountId, CancellationToken ct) =>
+        await (from line in _db.JournalLines.AsNoTracking()
+               join entry in _db.JournalEntries.AsNoTracking() on line.JournalEntryId equals entry.Id
+               where line.CompanyId == c && line.BranchId == b && line.AccountId == accountId && entry.Status == PostingStatus.Posted
+               orderby entry.EntryDateUtc, line.Id
+               select line).ToListAsync(ct);
+
     public async Task<IReadOnlyList<StockLedgerEntry>> GetStockBySourceDocumentAsync(Guid c, Guid b, Guid documentId, CancellationToken ct) =>
         await _db.StockLedgerEntries.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.SourceDocumentId == documentId).OrderBy(x => x.PostedAtUtc).ThenBy(x => x.Id).ToListAsync(ct);
 
