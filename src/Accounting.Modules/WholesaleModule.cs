@@ -64,7 +64,7 @@ public sealed class WholesaleCreditLimitPostingRule : IDocumentPostingRule
             invoiceGross = _currency.Add(invoiceGross, gross, policy);
         }
 
-        var ledger = await _queries.GetAccountBalanceAsync(userContext, partner.ControlAccountId, cancellationToken).ConfigureAwait(false);
+        var ledger = await _queries.GetBusinessPartnerBalanceAsync(userContext, partner.Id, partner.ControlAccountId, cancellationToken).ConfigureAwait(false);
         var exposure = _currency.Add(Math.Max(0m, ledger.SignedBalance), invoiceGross, policy);
         if (exposure > partner.CreditLimit)
             throw new AccountingDomainException($"Wholesale credit limit exceeded for partner {partner.Code}. Limit={partner.CreditLimit}, exposure after invoice={exposure}.");
