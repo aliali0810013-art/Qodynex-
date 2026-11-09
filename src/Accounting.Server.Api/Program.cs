@@ -30,6 +30,7 @@ builder.Services.AddScoped<SyncPushCommandHandler>();
 builder.Services.AddScoped<SyncPullQueryHandler>();
 builder.Services.AddScoped<DeviceRegistrationService>();
 builder.Services.AddScoped<TenantAdministrationService>();
+builder.Services.AddScoped<TenantBootstrapService>();
 builder.Services.AddScoped<ServerDatabaseBootstrapper>();
 builder.Services.AddSingleton<ICurrencyPolicyService, CurrencyPolicyService>();
 builder.Services.AddSingleton<IClock, SystemClock>();
@@ -107,6 +108,9 @@ app.MapPost("/api/v1/devices/register", async (DeviceRegistrationRequest request
         device.LastSeenAtUtc
     });
 }).RequireAuthorization();
+
+app.MapPost("/api/v1/tenant/bootstrap", async (TenantBootstrapRequest request, TenantBootstrapService service, CancellationToken ct) =>
+    Results.Ok(await service.GetAsync(request, ct).ConfigureAwait(false))).RequireAuthorization();
 
 app.MapPost("/api/v1/admin/tenant/configure", async (TenantConfigurationRequest request, TenantAdministrationService service, CancellationToken ct) =>
     Results.Ok(await service.ConfigureAsync(request, ct).ConfigureAwait(false))).RequireAuthorization("TenantAdmin");
