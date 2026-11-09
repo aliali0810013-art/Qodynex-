@@ -201,16 +201,31 @@ public sealed class SecondHalfAcceptanceTests
         var clock = new MutableClock(new DateTimeOffset(2026, 11, 10, 2, 0, 0, TimeSpan.Zero));
         var roles = new[] { "tenant.admin", "accounting.post" };
 
+        // Serializable transactions may abort with SQLSTATE 40001 under genuine
+        // concurrency. Retry the *whole* transaction, not just the sequence SQL.
         var tasks = Enumerable.Range(0, 20).Select(async _ =>
         {
-            await using var tenant = database.CreateTenant(companyId, branchId, userId, deviceId, roles, clock);
-            await using var tx = await tenant.Db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
-            await tenant.Session.ApplyAsync();
-            var result = await new OfficialSequenceGenerator(tenant.Db)
-                .NextAsync(companyId, branchId, nameof(SalesInvoice), clock.UtcNow);
-            await tenant.Db.SaveChangesAsync();
-            await tx.CommitAsync();
-            return result;
+            for (var attempt = 0; attempt < 30; attempt++)
+            {
+                await using var tenant = database.CreateTenant(companyId, branchId, userId, deviceId, roles, clock);
+                try
+                {
+                    await using var tx = await tenant.Db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+                    await tenant.Session.ApplyAsync();
+                    var result = await new OfficialSequenceGenerator(tenant.Db)
+                        .NextAsync(companyId, branchId, nameof(SalesInvoice), clock.UtcNow);
+                    await tenant.Db.SaveChangesAsync();
+                    await tx.CommitAsync();
+                    return result;
+                }
+                catch (Exception ex) when (attempt < 29 && (
+                    ex is Npgsql.PostgresException { SqlState: "40001" } ||
+                    ex is DbUpdateException { InnerException: Npgsql.PostgresException { SqlState: "40001" } }))
+                {
+                    await Task.Delay((attempt + 1) * 5);
+                }
+            }
+            throw new InvalidOperationException("Official sequence transaction exhausted serialization retries.");
         }).ToArray();
 
         var results = await Task.WhenAll(tasks);
