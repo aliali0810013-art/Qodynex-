@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Accounting.UI.Android;
 
-public sealed record MobileItem(Guid Id, string Sku, string Name, Guid UnitOfMeasureId, ItemKind ItemKind);
+public sealed record MobileItem(Guid Id, string Sku, string Name, string? Barcode, Guid UnitOfMeasureId, ItemKind ItemKind);
 public sealed record MobilePartner(Guid Id, string Code, string Name, Guid ControlAccountId, decimal CreditLimit);
 public sealed record MobileAccount(Guid Id, string Code, string Name);
 public sealed record MobileWarehouse(Guid Id, string Code, string Name);
@@ -35,8 +35,8 @@ public sealed class MobileAccountingFacade
         if (value.Length == 0) return null;
         return await _db.Items.AsNoTracking()
             .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive
-                     && (x.Sku == value || x.Name == value))
-            .Select(x => new MobileItem(x.Id, x.Sku, x.Name, x.BaseUnitOfMeasureId, x.ItemKind))
+                     && (x.Sku == value || x.Barcode == value || x.Name == value))
+            .Select(x => new MobileItem(x.Id, x.Sku, x.Name, x.Barcode, x.BaseUnitOfMeasureId, x.ItemKind))
             .FirstOrDefaultAsync(ct).ConfigureAwait(false);
     }
 
