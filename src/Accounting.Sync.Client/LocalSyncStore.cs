@@ -163,6 +163,17 @@ ON CONFLICT(Id) DO UPDATE SET
 """, cancellationToken).ConfigureAwait(false);
         }
 
+        foreach (var row in bootstrap.ItemUnitConversions)
+        {
+            await _db.Database.ExecuteSqlInterpolatedAsync($"""
+INSERT INTO ItemUnitConversions
+(Id, CompanyId, BranchId, ItemId, UnitOfMeasureId, BaseUnitsPerUnit)
+VALUES ({row.Id}, {bootstrap.CompanyId}, {bootstrap.BranchId}, {row.ItemId}, {row.UnitOfMeasureId}, {row.BaseUnitsPerUnit})
+ON CONFLICT(Id) DO UPDATE SET
+ ItemId=excluded.ItemId, UnitOfMeasureId=excluded.UnitOfMeasureId, BaseUnitsPerUnit=excluded.BaseUnitsPerUnit;
+""", cancellationToken).ConfigureAwait(false);
+        }
+
         foreach (var row in bootstrap.Warehouses)
         {
             await _db.Database.ExecuteSqlInterpolatedAsync($"""
