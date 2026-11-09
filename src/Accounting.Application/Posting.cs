@@ -283,7 +283,7 @@ public sealed class AccountingPostingEngine
 
         return new PostedOperationSyncPayload(
             new PostedDocumentSyncRecord(document.Id, document.CompanyId, document.BranchId, document.GetType().Name, document.ModuleKey,
-                document.LocalTempNumber, document.DocumentDateUtc, partnerId, warehouseId, primaryAccountId, counterAccountId, amount, description, documentLines),
+                document.ModuleMetadataJson, document.LocalTempNumber, document.DocumentDateUtc, partnerId, warehouseId, primaryAccountId, counterAccountId, amount, description, documentLines),
             new PostedJournalSyncRecord(journal.Id, journal.CompanyId, journal.BranchId, journal.SourceDocumentId, journal.SourceDocumentType,
                 journal.OperationId, journal.IdempotencyKey, journal.EntryDateUtc, journal.Description, journal.Reference, journal.ReversedEntryId,
                 journal.Lines.Select(x => new PostedJournalLineSyncRecord(x.Id, x.AccountId, x.Debit, x.Credit, x.Memo)).ToArray()),
