@@ -43,6 +43,7 @@ public sealed class LocalAccountingDbContext : DbContext
     public DbSet<LocalSyncState> LocalSyncStates => Set<LocalSyncState>();
     public DbSet<LocalSyncConflict> LocalSyncConflicts => Set<LocalSyncConflict>();
     public DbSet<LocalSequenceCounter> LocalSequenceCounters => Set<LocalSequenceCounter>();
+    public DbSet<LocalModuleConfiguration> LocalModuleConfigurations => Set<LocalModuleConfiguration>();
 
     protected override void OnModelCreating(ModelBuilder m)
     {
@@ -71,6 +72,12 @@ public sealed class LocalAccountingDbContext : DbContext
             b.ToTable("LocalSequenceCounters");
             b.HasKey(x => x.Id);
             b.HasIndex(x => new { x.CompanyId, x.BranchId, x.DeviceId, x.DocumentType }).IsUnique();
+        });
+        m.Entity<LocalModuleConfiguration>(b =>
+        {
+            b.ToTable("LocalModuleConfigurations");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => new { x.CompanyId, x.BranchId, x.ModuleKey }).IsUnique();
         });
 
         m.Entity<CommercialDocument>(b =>
