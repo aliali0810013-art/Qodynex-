@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Windows;
 using Accounting.Application;
@@ -10,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Accounting.UI.Windows;
 
-public partial class App : Application
+public partial class App : System.Windows.Application
 {
     private LocalAccountingDbContext? _db;
     private HttpClient? _httpClient;
