@@ -205,9 +205,26 @@ public sealed class SqliteUnitOfWork : IUnitOfWork
     public SqliteUnitOfWork(LocalAccountingDbContext db) => _db = db;
     public async Task<T> ExecuteInTransactionAsync<T>(Func<CancellationToken, Task<T>> work, CancellationToken ct = default)
     {
+        if (_db.Database.CurrentTransaction is not null)
+        {
+            var nestedResult = await work(ct).ConfigureAwait(false);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            return nestedResult;
+        }
+
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct).ConfigureAwait(false);
-        try { var result = await work(ct).ConfigureAwait(false); await _db.SaveChangesAsync(ct).ConfigureAwait(false); await tx.CommitAsync(ct).ConfigureAwait(false); return result; }
-        catch { await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false); throw; }
+        try
+        {
+            var result = await work(ct).ConfigureAwait(false);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            await tx.CommitAsync(ct).ConfigureAwait(false);
+            return result;
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
     }
 }
 
