@@ -102,7 +102,18 @@ public sealed record PostedDocumentSyncRecord(
     Guid? BusinessPartnerId,
     Guid? WarehouseId,
     Guid? PrimaryAccountId,
-    Guid? CounterAccountId);
+    Guid? CounterAccountId,
+    decimal? Amount,
+    string? Description,
+    IReadOnlyList<PostedDocumentLineSyncRecord> Lines);
+
+public sealed record PostedDocumentLineSyncRecord(
+    Guid Id,
+    Guid ItemId,
+    Guid UnitOfMeasureId,
+    decimal Quantity,
+    decimal BaseUnitsPerUnit,
+    decimal UnitPrice);
 
 public sealed record PostedJournalSyncRecord(
     Guid Id,
