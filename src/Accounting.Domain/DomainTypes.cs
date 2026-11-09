@@ -8,7 +8,7 @@ public enum NormalBalance { Debit = 1, Credit = 2 }
 public enum InventoryValuationMethod { MovingWeightedAverage = 1, Fifo = 2 }
 public enum PartnerType { Customer = 1, Supplier = 2, Both = 3 }\npublic enum ItemKind { Stock = 1, Service = 2 }
 public enum StockMovementType { PurchaseReceipt = 1, SaleIssue = 2, Reversal = 3, AdjustmentReceipt = 4, AdjustmentIssue = 5 }
-public enum OutboxStatus { Pending = 0, Processed = 1, Dispatched = 1, Failed = 2 }
+public enum OutboxStatus { Pending = 0, Processed = 1, Dispatched = 1, Failed = 2, Conflict = 3, Rejected = 4 }
 
 public interface ITenantEntity
 {
