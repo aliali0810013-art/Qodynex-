@@ -22,6 +22,7 @@ public interface IAccountingDataStore
     Task<IReadOnlyList<Account>> GetAccountsAsync(Guid companyId, Guid branchId, IEnumerable<Guid> accountIds, CancellationToken cancellationToken);
     Task<IReadOnlyList<StockLedgerEntry>> GetStockLedgerAsync(Guid companyId, Guid branchId, Guid itemId, Guid warehouseId, CancellationToken cancellationToken);
     Task<IReadOnlyList<JournalLine>> GetPostedJournalLinesAsync(Guid companyId, Guid branchId, Guid accountId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<JournalLine>> GetPostedJournalLinesForBusinessPartnerAsync(Guid companyId, Guid branchId, Guid businessPartnerId, Guid accountId, CancellationToken cancellationToken);
     Task<IReadOnlyList<StockLedgerEntry>> GetStockBySourceDocumentAsync(Guid companyId, Guid branchId, Guid sourceDocumentId, CancellationToken cancellationToken);
     Task<JournalEntry?> FindJournalByIdempotencyKeyAsync(Guid companyId, Guid branchId, string key, CancellationToken cancellationToken);
     Task<JournalEntry?> GetJournalBySourceDocumentAsync(Guid companyId, Guid branchId, Guid sourceDocumentId, CancellationToken cancellationToken);
