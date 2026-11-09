@@ -93,6 +93,8 @@ public sealed class SyncPushCommandHandler
             ValidateEnvelope(payload, envelope);
             var policy = await GetPolicyAsync(cancellationToken).ConfigureAwait(false);
             await ValidateJournalAsync(payload, policy, cancellationToken).ConfigureAwait(false);
+            if (!payload.Journal.ReversedEntryId.HasValue)
+                await ValidateDocumentAccountingAsync(payload, policy, cancellationToken).ConfigureAwait(false);
             await ValidateStockAsync(payload, policy, cancellationToken).ConfigureAwait(false);
 
             SyncAck ack;
@@ -146,9 +148,30 @@ public sealed class SyncPushCommandHandler
             OperationId = envelope.OperationId,
             IdempotencyKey = envelope.IdempotencyKey,
             SourceDeviceId = envelope.DeviceId,
+            BusinessPartnerId = payload.Document.BusinessPartnerId,
+            WarehouseId = payload.Document.WarehouseId,
+            PrimaryAccountId = payload.Document.PrimaryAccountId,
+            CounterAccountId = payload.Document.CounterAccountId,
+            Amount = payload.Document.Amount,
+            Description = payload.Document.Description,
             ServerTimestampUtc = now
         };
         _db.FinancialDocuments.Add(document);
+        foreach (var line in payload.Document.Lines)
+        {
+            _db.DocumentLines.Add(new ServerDocumentLine
+            {
+                Id = line.Id,
+                CompanyId = envelope.CompanyId,
+                BranchId = envelope.BranchId,
+                DocumentId = document.Id,
+                ItemId = line.ItemId,
+                UnitOfMeasureId = line.UnitOfMeasureId,
+                Quantity = line.Quantity,
+                BaseUnitsPerUnit = line.BaseUnitsPerUnit,
+                UnitPrice = line.UnitPrice
+            });
+        }
         AddJournalAndStock(envelope, payload, now);
 
         var change = new SyncChange
@@ -314,6 +337,167 @@ public sealed class SyncPushCommandHandler
 
         if (_currency.RoundMoney(debit, policy) != _currency.RoundMoney(credit, policy))
             throw new UnbalancedJournalEntryException(debit, credit);
+    }
+
+    private async Task ValidateDocumentAccountingAsync(PostedOperationSyncPayload payload, CompanyPolicy policy, CancellationToken cancellationToken)
+    {
+        decimal Debit(Guid accountId) => _currency.RoundMoney(payload.Journal.Lines.Where(x => x.AccountId == accountId).Sum(x => x.Debit), policy);
+        decimal Credit(Guid accountId) => _currency.RoundMoney(payload.Journal.Lines.Where(x => x.AccountId == accountId).Sum(x => x.Credit), policy);
+
+        if (payload.Document.DocumentType is "ReceiptVoucher" or "PaymentVoucher")
+        {
+            if (!payload.Document.Amount.HasValue || payload.Document.Amount.Value <= 0m
+                || !payload.Document.PrimaryAccountId.HasValue || !payload.Document.CounterAccountId.HasValue)
+                throw new AccountingDomainException("Voucher sync payload is incomplete.");
+
+            var amount = _currency.RoundMoney(payload.Document.Amount.Value, policy);
+            if (payload.Document.DocumentType == "ReceiptVoucher")
+            {
+                if (Debit(payload.Document.PrimaryAccountId.Value) != amount || Credit(payload.Document.CounterAccountId.Value) != amount)
+                    throw new AccountingDomainException("Receipt voucher journal does not match the source voucher amount/accounts.");
+            }
+            else
+            {
+                if (Credit(payload.Document.PrimaryAccountId.Value) != amount || Debit(payload.Document.CounterAccountId.Value) != amount)
+                    throw new AccountingDomainException("Payment voucher journal does not match the source voucher amount/accounts.");
+            }
+            if (payload.StockEntries.Count != 0)
+                throw new AccountingDomainException("Receipt/payment vouchers cannot create stock ledger entries.");
+            return;
+        }
+
+        if (payload.Document.DocumentType is not ("SalesInvoice" or "PurchaseInvoice"))
+            throw new AccountingDomainException($"Unsupported synchronized document type: {payload.Document.DocumentType}.");
+        if (payload.Document.Lines.Count == 0)
+            throw new AccountingDomainException("Invoice source lines are required for server validation.");
+        if (!payload.Document.PrimaryAccountId.HasValue)
+            throw new AccountingDomainException("Invoice settlement account is required.");
+
+        var itemIds = payload.Document.Lines.Select(x => x.ItemId).Distinct().ToArray();
+        var items = await _db.Items.Where(x => itemIds.Contains(x.Id)).ToListAsync(cancellationToken).ConfigureAwait(false);
+        if (items.Count != itemIds.Length) throw new AccountingDomainException("One or more invoice items do not exist on the server.");
+
+        decimal gross = 0m, taxTotal = 0m;
+        var accountNet = new Dictionary<Guid, decimal>();
+        var expectedStockQty = new Dictionary<Guid, decimal>();
+        var expectedPurchaseValue = new Dictionary<Guid, decimal>();
+
+        foreach (var line in payload.Document.Lines)
+        {
+            if (line.Quantity <= 0m || line.BaseUnitsPerUnit <= 0m || line.UnitPrice <= 0m)
+                throw new AccountingDomainException("Invoice quantities, conversion factors and prices must be positive.");
+            var item = items.Single(x => x.Id == line.ItemId);
+            if (!item.IsActive) throw new AccountingDomainException($"Item {item.Id} is inactive.");
+            var tax = Tax(line.Quantity, line.UnitPrice, policy);
+            gross = _currency.Add(gross, tax.Gross, policy);
+            taxTotal = _currency.Add(taxTotal, tax.Tax, policy);
+            var baseQty = _currency.MultiplyQuantity(line.Quantity, line.BaseUnitsPerUnit, policy);
+
+            if (payload.Document.DocumentType == "SalesInvoice")
+            {
+                accountNet[item.SalesRevenueAccountId] = accountNet.TryGetValue(item.SalesRevenueAccountId, out var net)
+                    ? _currency.Add(net, tax.Net, policy)
+                    : tax.Net;
+                if (item.ItemKind == ItemKind.Stock)
+                    expectedStockQty[item.Id] = expectedStockQty.TryGetValue(item.Id, out var qty)
+                        ? _currency.AddQuantity(qty, baseQty, policy)
+                        : baseQty;
+            }
+            else
+            {
+                var purchaseCost = policy.TaxPolicy.Enabled && policy.TaxPolicy.InputTaxAccountId.HasValue ? tax.Net : tax.Gross;
+                var accountId = item.ItemKind == ItemKind.Stock ? item.InventoryAccountId : item.CogsAccountId;
+                if (accountId == Guid.Empty) throw new AccountingDomainException($"Item {item.Sku} lacks its purchase cost account.");
+                accountNet[accountId] = accountNet.TryGetValue(accountId, out var current)
+                    ? _currency.Add(current, purchaseCost, policy)
+                    : purchaseCost;
+                if (item.ItemKind == ItemKind.Stock)
+                {
+                    expectedStockQty[item.Id] = expectedStockQty.TryGetValue(item.Id, out var qty)
+                        ? _currency.AddQuantity(qty, baseQty, policy)
+                        : baseQty;
+                    expectedPurchaseValue[item.Id] = expectedPurchaseValue.TryGetValue(item.Id, out var value)
+                        ? _currency.Add(value, purchaseCost, policy)
+                        : purchaseCost;
+                }
+            }
+        }
+
+        var settlement = payload.Document.PrimaryAccountId.Value;
+        if (payload.Document.DocumentType == "SalesInvoice")
+        {
+            if (Debit(settlement) != gross) throw new AccountingDomainException("Sales settlement debit does not equal source invoice gross.");
+            foreach (var expected in accountNet)
+                if (Credit(expected.Key) != _currency.RoundMoney(expected.Value, policy))
+                    throw new AccountingDomainException($"Sales revenue for account {expected.Key} does not match source invoice lines.");
+            if (taxTotal > 0m && policy.TaxPolicy.OutputTaxAccountId is Guid outputTax && Credit(outputTax) != taxTotal)
+                throw new AccountingDomainException("Output tax journal line does not match the source invoice.");
+
+            foreach (var expected in expectedStockQty)
+            {
+                if (!payload.Document.WarehouseId.HasValue) throw new AccountingDomainException("Stock sales require a warehouse.");
+                var stockRows = payload.StockEntries.Where(x => x.ItemId == expected.Key && x.WarehouseId == payload.Document.WarehouseId.Value).ToArray();
+                var actualQty = stockRows.Sum(x => x.QuantityDelta);
+                if (_currency.RoundQuantity(actualQty, policy) != _currency.RoundQuantity(-expected.Value, policy))
+                    throw new AccountingDomainException($"Sales stock quantity for item {expected.Key} does not match invoice source lines.");
+
+                var serverLedger = await _db.StockLedgerEntries.AsNoTracking()
+                    .Where(x => x.ItemId == expected.Key && x.WarehouseId == payload.Document.WarehouseId.Value)
+                    .OrderBy(x => x.PostedAtUtc).ThenBy(x => x.Id)
+                    .ToListAsync(cancellationToken).ConfigureAwait(false);
+                var domainLedger = serverLedger.Select(x => new StockLedgerEntry(
+                    x.CompanyId, x.BranchId, x.ItemId, x.WarehouseId, x.SourceDocumentId, x.SourceDocumentType, x.OperationId,
+                    (StockMovementType)x.MovementType, x.QuantityDelta, x.InventoryValueDelta, x.UnitCost, x.PostedAtUtc, x.ReversedStockLedgerEntryId)).ToArray();
+                var valuation = new InventoryValuationEngine(_currency).CalculateIssue(domainLedger, expected.Value, policy,
+                    (await _db.Warehouses.AsNoTracking().SingleAsync(x => x.Id == payload.Document.WarehouseId.Value, cancellationToken).ConfigureAwait(false)).AllowNegativeStockOverride ?? policy.AllowNegativeStock);
+
+                var actualValue = _currency.RoundMoney(-stockRows.Sum(x => x.InventoryValueDelta), policy);
+                if (actualValue != valuation.TotalCost)
+                    throw new ServerSyncConflictException("INVENTORY_COST_CONFLICT",
+                        $"Offline COGS for item {expected.Key} is {actualValue}, while authoritative server COGS is {valuation.TotalCost}.");
+
+                var item = items.Single(x => x.Id == expected.Key);
+                if (Debit(item.CogsAccountId) != valuation.TotalCost || Credit(item.InventoryAccountId) != valuation.TotalCost)
+                    throw new ServerSyncConflictException("INVENTORY_COST_CONFLICT",
+                        $"Offline journal COGS for item {expected.Key} does not match authoritative server valuation.");
+            }
+        }
+        else
+        {
+            if (Credit(settlement) != gross) throw new AccountingDomainException("Purchase settlement credit does not equal source invoice gross.");
+            foreach (var expected in accountNet)
+                if (Debit(expected.Key) != _currency.RoundMoney(expected.Value, policy))
+                    throw new AccountingDomainException($"Purchase debit for account {expected.Key} does not match source invoice lines.");
+            if (taxTotal > 0m && policy.TaxPolicy.InputTaxAccountId is Guid inputTax && Debit(inputTax) != taxTotal)
+                throw new AccountingDomainException("Input tax journal line does not match the source invoice.");
+
+            foreach (var expected in expectedStockQty)
+            {
+                if (!payload.Document.WarehouseId.HasValue) throw new AccountingDomainException("Stock purchases require a warehouse.");
+                var stockRows = payload.StockEntries.Where(x => x.ItemId == expected.Key && x.WarehouseId == payload.Document.WarehouseId.Value).ToArray();
+                if (_currency.RoundQuantity(stockRows.Sum(x => x.QuantityDelta), policy) != _currency.RoundQuantity(expected.Value, policy))
+                    throw new AccountingDomainException($"Purchase stock quantity for item {expected.Key} does not match source lines.");
+                if (_currency.RoundMoney(stockRows.Sum(x => x.InventoryValueDelta), policy) != _currency.RoundMoney(expectedPurchaseValue[expected.Key], policy))
+                    throw new AccountingDomainException($"Purchase inventory value for item {expected.Key} does not match source lines.");
+            }
+        }
+
+        var stockItemIds = expectedStockQty.Keys.ToHashSet();
+        if (payload.StockEntries.Any(x => !stockItemIds.Contains(x.ItemId)))
+            throw new AccountingDomainException("Sync payload contains stock entries not supported by the source invoice lines.");
+    }
+
+    private (decimal Net, decimal Tax, decimal Gross) Tax(decimal quantity, decimal unitPrice, CompanyPolicy policy)
+    {
+        var raw = _currency.Multiply(quantity, unitPrice, policy);
+        if (!policy.TaxPolicy.Enabled || policy.TaxPolicy.Rate == 0m) return (raw, 0m, raw);
+        if (policy.TaxPolicy.PricesIncludeTax)
+        {
+            var net = _currency.Divide(raw, 1m + policy.TaxPolicy.Rate, policy);
+            return (net, _currency.Subtract(raw, net, policy), raw);
+        }
+        var tax = _currency.Multiply(raw, policy.TaxPolicy.Rate, policy);
+        return (raw, tax, _currency.Add(raw, tax, policy));
     }
 
     private async Task ValidateStockAsync(PostedOperationSyncPayload payload, CompanyPolicy policy, CancellationToken cancellationToken)
