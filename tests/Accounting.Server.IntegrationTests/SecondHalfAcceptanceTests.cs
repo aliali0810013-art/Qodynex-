@@ -186,8 +186,8 @@ public sealed class SecondHalfAcceptanceTests
 
         var saleA = await deviceA.PostSaleAsync(serverA.StockItemId, serverA.UnitId, serverA.WarehouseId,
             serverA.CashAccountId, null, 1m, 200m, RetailModule.ModuleKey, "device-a-last-unit");
-        var saleB = await deviceB.PostSaleAsync(serverB.StockItemId, serverB.UnitId, serverB.WarehouseId,
-            serverB.CashAccountId, null, 1m, 210m, RetailModule.ModuleKey, "device-b-last-unit");
+        var saleB = await deviceB.PostSaleAsync(serverA.StockItemId, serverA.UnitId, serverA.WarehouseId,
+            serverA.CashAccountId, null, 1m, 210m, RetailModule.ModuleKey, "device-b-last-unit");
 
         await coordinatorB.RunOnceAsync();
         serverA.Clock.AdvanceSeconds();
