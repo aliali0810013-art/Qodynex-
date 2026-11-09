@@ -288,6 +288,7 @@ internal sealed class LocalDeviceHarness : IAsyncDisposable
         catch
         {
             await tx.RollbackAsync();
+            Db.ChangeTracker.Clear();
             throw;
         }
     }
@@ -313,6 +314,7 @@ internal sealed class LocalDeviceHarness : IAsyncDisposable
         catch
         {
             await tx.RollbackAsync();
+            Db.ChangeTracker.Clear();
             throw;
         }
     }
@@ -336,6 +338,7 @@ internal sealed class LocalDeviceHarness : IAsyncDisposable
         catch
         {
             await tx.RollbackAsync();
+            Db.ChangeTracker.Clear();
             throw;
         }
     }
