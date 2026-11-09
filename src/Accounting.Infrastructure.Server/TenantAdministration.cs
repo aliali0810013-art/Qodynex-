@@ -34,12 +34,14 @@ public sealed record ServerItemRegistration(
     Guid InventoryAccountId, Guid SalesRevenueAccountId, Guid CogsAccountId, bool IsActive);
 
 public sealed record ServerWarehouseRegistration(Guid Id, string Code, string Name, bool? AllowNegativeStockOverride);
+public sealed record ServerModuleConfigurationRegistration(string ModuleKey, string ConfigurationJson);
 
 public sealed record TenantConfigurationRequest(
     string CompanyName,
     string BranchCode,
     string BranchName,
     IReadOnlyList<string> EnabledModules,
+    IReadOnlyList<ServerModuleConfigurationRegistration> ModuleConfigurations,
     TenantPolicyRegistration Policy,
     IReadOnlyList<ServerAccountRegistration> Accounts,
     IReadOnlyList<ServerUnitRegistration> Units,
@@ -96,7 +98,8 @@ public sealed class TenantAdministrationService
             UnitCount = await _db.UnitOfMeasures.CountAsync(cancellationToken).ConfigureAwait(false),
             PartnerCount = await _db.BusinessPartners.CountAsync(cancellationToken).ConfigureAwait(false),
             ItemCount = await _db.Items.CountAsync(cancellationToken).ConfigureAwait(false),
-            WarehouseCount = await _db.Warehouses.CountAsync(cancellationToken).ConfigureAwait(false)
+            WarehouseCount = await _db.Warehouses.CountAsync(cancellationToken).ConfigureAwait(false),
+            ModuleConfigurationCount = await _db.ModuleConfigurations.CountAsync(cancellationToken).ConfigureAwait(false)
         });
 
         var profile = await _db.TenantProfiles.SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
@@ -130,6 +133,22 @@ public sealed class TenantAdministrationService
         policy.PricesIncludeTax = validatedPolicy.TaxPolicy.PricesIncludeTax;
         policy.OutputTaxAccountId = validatedPolicy.TaxPolicy.OutputTaxAccountId;
         policy.InputTaxAccountId = validatedPolicy.TaxPolicy.InputTaxAccountId;
+
+        foreach (var module in request.ModuleConfigurations)
+        {
+            if (string.IsNullOrWhiteSpace(module.ModuleKey)) throw new InvalidOperationException("Module configuration key is required.");
+            using var _ = JsonDocument.Parse(string.IsNullOrWhiteSpace(module.ConfigurationJson) ? "{}" : module.ConfigurationJson);
+            var key = module.ModuleKey.Trim().ToUpperInvariant();
+            if (!request.EnabledModules.Any(x => string.Equals(x, key, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException($"Module configuration '{key}' cannot be supplied for a disabled module.");
+            var row = await _db.ModuleConfigurations.SingleOrDefaultAsync(x => x.ModuleKey == key, cancellationToken).ConfigureAwait(false);
+            if (row is null)
+            {
+                row = new ServerModuleConfiguration { CompanyId = _tenant.CompanyId, BranchId = _tenant.BranchId, ModuleKey = key };
+                _db.ModuleConfigurations.Add(row);
+            }
+            row.ConfigurationJson = string.IsNullOrWhiteSpace(module.ConfigurationJson) ? "{}" : module.ConfigurationJson;
+        }
 
         foreach (var dto in request.Accounts)
         {
@@ -283,6 +302,8 @@ public sealed class TenantAdministrationService
                 x.InventoryAccountId, x.SalesRevenueAccountId, x.CogsAccountId, (int)x.ItemKind, x.IsActive)).ToArray(),
             request.Warehouses.Select(x => new WarehouseMasterSyncRecord(x.Id, x.Code, x.Name, x.AllowNegativeStockOverride)).ToArray(),
             request.EnabledModules.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim().ToUpperInvariant()).Distinct().ToArray(),
+            request.ModuleConfigurations.Select(x => new ModuleConfigurationSyncRecord(x.ModuleKey.Trim().ToUpperInvariant(),
+                string.IsNullOrWhiteSpace(x.ConfigurationJson) ? "{}" : x.ConfigurationJson)).ToArray(),
             Array.Empty<string>(),
             now);
 }
@@ -323,6 +344,7 @@ public sealed class TenantBootstrapService
         var partners = await _db.BusinessPartners.AsNoTracking().OrderBy(x => x.Code).ToListAsync(cancellationToken).ConfigureAwait(false);
         var items = await _db.Items.AsNoTracking().OrderBy(x => x.Sku).ToListAsync(cancellationToken).ConfigureAwait(false);
         var warehouses = await _db.Warehouses.AsNoTracking().OrderBy(x => x.Code).ToListAsync(cancellationToken).ConfigureAwait(false);
+        var moduleConfigurations = await _db.ModuleConfigurations.AsNoTracking().OrderBy(x => x.ModuleKey).ToListAsync(cancellationToken).ConfigureAwait(false);
         device.LastSeenAtUtc = _clock.UtcNow;
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -347,6 +369,7 @@ public sealed class TenantBootstrapService
                 x.InventoryAccountId, x.SalesRevenueAccountId, x.CogsAccountId, (int)x.ItemKind, x.IsActive)).ToArray(),
             warehouses.Select(x => new WarehouseMasterSyncRecord(x.Id, x.Code, x.Name, x.AllowNegativeStockOverride)).ToArray(),
             profile.EnabledModulesCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            moduleConfigurations.Select(x => new ModuleConfigurationSyncRecord(x.ModuleKey, x.ConfigurationJson)).ToArray(),
             _tenant.RoleClaims.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray(),
             _clock.UtcNow);
     }
