@@ -501,10 +501,9 @@ public sealed class SyncPushCommandHandler
                     .Where(x => x.ItemId == expected.Key && x.WarehouseId == payload.Document.WarehouseId.Value)
                     .OrderBy(x => x.PostedAtUtc).ThenBy(x => x.Id)
                     .ToListAsync(cancellationToken).ConfigureAwait(false);
-                var domainLedger = serverLedger.Select(x => new StockLedgerEntry(
-                    x.CompanyId, x.BranchId, x.ItemId, x.WarehouseId, x.SourceDocumentId, x.SourceDocumentType, x.OperationId,
-                    (StockMovementType)x.MovementType, x.QuantityDelta, x.InventoryValueDelta, x.UnitCost, x.PostedAtUtc, x.ReversedStockLedgerEntryId)).ToArray();
-                var valuation = new InventoryValuationEngine(_currency).CalculateIssue(domainLedger, expected.Value, policy,
+                var valuationRows = serverLedger.Select(x => new StockLedgerValuationRow(
+                    x.Id, x.ItemId, x.WarehouseId, x.QuantityDelta, x.InventoryValueDelta, x.UnitCost, x.PostedAtUtc)).ToArray();
+                var valuation = new InventoryValuationEngine(_currency).CalculateIssue(valuationRows, expected.Value, policy,
                     (await _db.Warehouses.AsNoTracking().SingleAsync(x => x.Id == payload.Document.WarehouseId.Value, cancellationToken).ConfigureAwait(false)).AllowNegativeStockOverride ?? policy.AllowNegativeStock);
 
                 var actualValue = _currency.RoundMoney(-stockRows.Sum(x => x.InventoryValueDelta), policy);
