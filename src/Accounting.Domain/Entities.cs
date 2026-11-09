@@ -480,9 +480,22 @@ public sealed class OutboxMessage : TenantEntity
         Status = OutboxStatus.Failed;
     }
 
+    public void MarkConflict(DateTimeOffset attemptedAtUtc)
+    {
+        LastAttemptAtUtc = attemptedAtUtc;
+        Status = OutboxStatus.Conflict;
+    }
+
+    public void MarkRejected(DateTimeOffset attemptedAtUtc)
+    {
+        LastAttemptAtUtc = attemptedAtUtc;
+        Status = OutboxStatus.Rejected;
+    }
+
     public void MarkPendingForRetry()
     {
-        if (Status == OutboxStatus.Processed) throw new AccountingDomainException("Processed outbox messages cannot be retried.");
+        if (Status is OutboxStatus.Processed or OutboxStatus.Conflict or OutboxStatus.Rejected)
+            throw new AccountingDomainException("Terminal outbox messages cannot be retried without an explicit corrective operation.");
         Status = OutboxStatus.Pending;
     }
 }
