@@ -191,6 +191,35 @@ public sealed class SecondHalfAcceptanceTests
     }
 
     [Fact]
+    public async Task Official_Sequence_Is_Contiguous_And_Unique_Under_Concurrent_PostgreSql_Transactions()
+    {
+        var database = await PostgresTestDatabase.ResetAsync();
+        var companyId = Guid.NewGuid();
+        var branchId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var deviceId = Guid.NewGuid();
+        var clock = new MutableClock(new DateTimeOffset(2026, 11, 10, 2, 0, 0, TimeSpan.Zero));
+        var roles = new[] { "tenant.admin", "accounting.post" };
+
+        var tasks = Enumerable.Range(0, 20).Select(async _ =>
+        {
+            await using var tenant = database.CreateTenant(companyId, branchId, userId, deviceId, roles, clock);
+            await using var tx = await tenant.Db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            await tenant.Session.ApplyAsync();
+            var result = await new OfficialSequenceGenerator(tenant.Db)
+                .NextAsync(nameof(SalesInvoice), clock.UtcNow);
+            await tx.CommitAsync();
+            return result;
+        }).ToArray();
+
+        var results = await Task.WhenAll(tasks);
+        Assert.Equal(20, results.Select(x => x.Sequence).Distinct().Count());
+        Assert.Equal(20, results.Select(x => x.Number).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(Enumerable.Range(1, 20).Select(x => (long)x), results.Select(x => x.Sequence).OrderBy(x => x));
+        Assert.All(results, x => Assert.Matches(@"^INV-2026-\d{6}$", x.Number));
+    }
+
+    [Fact]
     public void Wholesale_Price_Tiers_Select_Highest_Applicable_Quantity_Band()
     {
         var itemId = Guid.NewGuid();
