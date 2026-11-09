@@ -18,7 +18,7 @@ public sealed class WholesaleModule : IActivityModule
     public string DisplayName => "جملة";
     public IReadOnlySet<string> Features { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        "units.carton", "units.pallet", "pricing.tiers", "credit.strict-limit", "customer.account"
+        "units.carton", "units.pallet", "pricing.tiers", "credit.strict-limit", "customer.account", "inventory.stock"
     };
     public IReadOnlyList<ModuleScreenDefinition> Screens { get; } =
     [
