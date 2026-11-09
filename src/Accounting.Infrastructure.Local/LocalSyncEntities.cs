@@ -37,3 +37,12 @@ public sealed class LocalSequenceCounter
     public string DocumentType { get; set; } = string.Empty;
     public long CurrentValue { get; set; }
 }
+
+public sealed class LocalModuleConfiguration
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid BranchId { get; set; }
+    public string ModuleKey { get; set; } = string.Empty;
+    public string ConfigurationJson { get; set; } = "{}";
+}
