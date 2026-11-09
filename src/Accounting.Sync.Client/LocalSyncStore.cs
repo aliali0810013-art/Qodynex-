@@ -310,6 +310,16 @@ ON CONFLICT(Id) DO UPDATE SET Code=excluded.Code, Name=excluded.Name, AllowNegat
         await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task RecordUpgradeRequiredAsync(UserContext user, string message, CancellationToken cancellationToken = default)
+    {
+        DemandTenant(user);
+        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        var state = await GetOrCreateStateAsync(user, cancellationToken).ConfigureAwait(false);
+        state.LastError = $"Upgrade required: {message}";
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task MarkTransportFailureAsync(UserContext user, IReadOnlyList<SyncEnvelope> messages, DateTimeOffset attemptedAtUtc, CancellationToken cancellationToken = default)
     {
         DemandTenant(user);
