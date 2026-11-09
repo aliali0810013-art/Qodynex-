@@ -18,6 +18,7 @@ public interface IAccountingDataStore
     Task<PaymentVoucher> GetPaymentVoucherAsync(Guid companyId, Guid branchId, Guid documentId, CancellationToken cancellationToken);
     Task<Warehouse> GetWarehouseAsync(Guid companyId, Guid branchId, Guid warehouseId, CancellationToken cancellationToken);
     Task<Item> GetItemAsync(Guid companyId, Guid branchId, Guid itemId, CancellationToken cancellationToken);
+    Task<BusinessPartner> GetBusinessPartnerAsync(Guid companyId, Guid branchId, Guid partnerId, CancellationToken cancellationToken);
     Task<IReadOnlyList<Account>> GetAccountsAsync(Guid companyId, Guid branchId, IEnumerable<Guid> accountIds, CancellationToken cancellationToken);
     Task<IReadOnlyList<StockLedgerEntry>> GetStockLedgerAsync(Guid companyId, Guid branchId, Guid itemId, Guid warehouseId, CancellationToken cancellationToken);
     Task<IReadOnlyList<JournalLine>> GetPostedJournalLinesAsync(Guid companyId, Guid branchId, Guid accountId, CancellationToken cancellationToken);
