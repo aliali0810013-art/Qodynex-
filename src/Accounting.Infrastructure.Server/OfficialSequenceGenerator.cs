@@ -1,5 +1,6 @@
 using Accounting.SharedKernel;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Accounting.Infrastructure.Server;
 
