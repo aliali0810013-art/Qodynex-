@@ -125,6 +125,7 @@ public sealed class LocalAccountingDbContext : DbContext
         m.Entity<DocumentReversalRecord>().HasIndex(x => new { x.CompanyId, x.BranchId, x.IdempotencyKey }).IsUnique();
 
         m.Entity<Company>().Property(x => x.TaxRate).HasPrecision(38, 12);
+        m.Entity<BusinessPartner>().Property(x => x.CreditLimit).HasPrecision(38, 12);
         m.Entity<ItemUnitConversion>().Property(x => x.BaseUnitsPerUnit).HasPrecision(38, 12);
         m.Entity<SalesInvoiceLine>().Property(x => x.Quantity).HasPrecision(38, 12);
         m.Entity<SalesInvoiceLine>().Property(x => x.BaseUnitsPerUnit).HasPrecision(38, 12);
