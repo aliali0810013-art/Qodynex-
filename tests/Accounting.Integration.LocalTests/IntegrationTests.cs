@@ -28,7 +28,7 @@ public sealed class IntegrationTests
         var p1=await t.Purchase("LOC-1",10m,100m); await t.Engine.PostPurchaseInvoiceAsync(new(p1.Id,t.Context("p1"))); t.Clock.Advance();
         var p2=await t.Purchase("LOC-2",10m,200m); await t.Engine.PostPurchaseInvoiceAsync(new(p2.Id,t.Context("p2"))); t.Clock.Advance();
         var s=await t.Sale("LOC-3",5m,250m); await t.Engine.PostSalesInvoiceAsync(new(s.Id,t.Context("s1")));
-        var ledger=await t.Db.StockLedgerEntries.AsNoTracking().Where(x=>x.ItemId==t.Item.Id).OrderBy(x=>x.PostedAtUtc).ToListAsync();
+        var ledger=(await t.Db.StockLedgerEntries.AsNoTracking().Where(x=>x.ItemId==t.Item.Id).ToListAsync()).OrderBy(x=>x.PostedAtUtc).ThenBy(x=>x.Id).ToList();
         var state=new InventoryValuationEngine(new CurrencyPolicyService()).CalculateState(ledger,t.Company.GetPolicy());
         var lines=await t.Db.JournalLines.AsNoTracking().ToListAsync();
         Assert.Equal(15m,state.QuantityOnHand); Assert.Equal(150m,state.AverageUnitCost);
