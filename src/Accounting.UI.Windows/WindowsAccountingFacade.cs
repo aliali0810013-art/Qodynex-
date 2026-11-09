@@ -82,6 +82,16 @@ public sealed class WindowsAccountingFacade
             .Take(500)
             .ToListAsync(ct).ConfigureAwait(false);
 
+    public async Task<decimal> GetSuggestedUnitPriceAsync(string moduleKey, Guid itemId, decimal baseQuantity, decimal fallback, CancellationToken ct = default)
+    {
+        if (!string.Equals(moduleKey, Accounting.Modules.WholesaleModule.ModuleKey, StringComparison.OrdinalIgnoreCase)) return fallback;
+        var json = await _db.LocalModuleConfigurations.AsNoTracking()
+            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.ModuleKey == Accounting.Modules.WholesaleModule.ModuleKey)
+            .Select(x => x.ConfigurationJson)
+            .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+        return new Accounting.Modules.WholesalePricingService().GetUnitPrice(json ?? "{}", itemId, baseQuantity, fallback);
+    }
+
     public async Task<CompanyPolicy> GetPolicyAsync(CancellationToken ct = default) =>
         (await _db.Companies.AsNoTracking().SingleAsync(x => x.Id == _user.CompanyId, ct).ConfigureAwait(false)).GetPolicy();
 
