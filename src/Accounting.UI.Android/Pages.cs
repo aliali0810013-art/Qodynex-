@@ -346,13 +346,18 @@ public sealed class SalePage : ContentPage
                     ColumnDefinitions =
                     {
                         new ColumnDefinition(GridLength.Star),
-                        new ColumnDefinition(new GridLength(72)),
-                        new ColumnDefinition(new GridLength(100)),
+                        new ColumnDefinition(new GridLength(105)),
+                        new ColumnDefinition(new GridLength(68)),
+                        new ColumnDefinition(new GridLength(92)),
                         new ColumnDefinition(new GridLength(40))
                     }
                 };
                 var name = new Label { VerticalTextAlignment = TextAlignment.Center };
                 name.SetBinding(Label.TextProperty, nameof(MobileSaleLineViewModel.Name));
+                var unit = new Picker { HorizontalOptions = LayoutOptions.Fill };
+                unit.SetBinding(Picker.ItemsSourceProperty, nameof(MobileSaleLineViewModel.UnitOptions));
+                unit.SetBinding(Picker.SelectedItemProperty, nameof(MobileSaleLineViewModel.SelectedUnit), BindingMode.TwoWay);
+                unit.ItemDisplayBinding = new Binding(nameof(MobileUnitOption.Name));
                 var qty = new Entry { Keyboard = Keyboard.Numeric, HorizontalTextAlignment = TextAlignment.Center };
                 qty.SetBinding(Entry.TextProperty, nameof(MobileSaleLineViewModel.Quantity), BindingMode.TwoWay);
                 var price = new Entry { Keyboard = Keyboard.Numeric, HorizontalTextAlignment = TextAlignment.Center, Placeholder = "السعر" };
@@ -364,7 +369,7 @@ public sealed class SalePage : ContentPage
                     if (remove.CommandParameter is MobileSaleLineViewModel row) _lines.Remove(row);
                     Recalculate();
                 };
-                grid.Add(name, 0); grid.Add(qty, 1); grid.Add(price, 2); grid.Add(remove, 3);
+                grid.Add(name, 0); grid.Add(unit, 1); grid.Add(qty, 2); grid.Add(price, 3); grid.Add(remove, 4);
                 return grid;
             })
         };
@@ -402,7 +407,7 @@ public sealed class SalePage : ContentPage
                         _serviceType.Position(1,1)
                     }
                 }.Position(0,1),
-                new Label { Text = "الصنف    | الكمية | السعر", FontAttributes = FontAttributes.Bold }.Position(0,2),
+                new Label { Text = "الصنف | الوحدة | الكمية | السعر", FontAttributes = FontAttributes.Bold }.Position(0,2),
                 list.Position(0,3),
                 new VerticalStackLayout { Spacing = 6, Children = { _tax, _total, post, _status } }.Position(0,4)
             }
@@ -461,16 +466,21 @@ public sealed class SalePage : ContentPage
             existing.Quantity += 1m;
         else
         {
-            var suggestedPrice = await _runtime.Facade.GetSuggestedUnitPriceAsync(_moduleKey, item.Id, 1m, 0m).ConfigureAwait(true);
+            var unitOptions = await _runtime.Facade.GetItemUnitsAsync(item.Id).ConfigureAwait(true);
+            if (unitOptions.Count == 0) throw new InvalidOperationException("لا توجد وحدة قياس معرفة للصنف.");
+            var defaultUnit = unitOptions[0];
+            var suggestedPrice = await _runtime.Facade.GetSuggestedUnitPriceAsync(
+                _moduleKey, item.Id, defaultUnit.BaseUnitsPerUnit, 0m).ConfigureAwait(true);
             var row = new MobileSaleLineViewModel
             {
                 ItemId = item.Id,
-                UnitOfMeasureId = item.UnitOfMeasureId,
                 Sku = item.Sku,
                 Name = item.Name,
                 Quantity = 1m,
                 UnitPrice = suggestedPrice
             };
+            foreach (var option in unitOptions) row.UnitOptions.Add(option);
+            row.SelectedUnit = defaultUnit;
             row.PropertyChanged += (_, args) =>
             {
                 if (args.PropertyName is nameof(MobileSaleLineViewModel.Quantity) or nameof(MobileSaleLineViewModel.UnitPrice) or nameof(MobileSaleLineViewModel.Total))
