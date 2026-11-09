@@ -8,6 +8,7 @@ public interface ISyncTransport
 {
     Task<SyncPushResult> PushAsync(SyncPushBatch batch, CancellationToken cancellationToken = default);
     Task<SyncPullResult> PullAsync(SyncPullRequest request, CancellationToken cancellationToken = default);
+    Task<TenantBootstrapResult> BootstrapAsync(TenantBootstrapRequest request, CancellationToken cancellationToken = default);
 }
 
 public sealed class SyncTransportException : HttpRequestException
@@ -38,6 +39,12 @@ public sealed class HttpSyncTransport : ISyncTransport
     {
         using var response = await _httpClient.PostAsJsonAsync("/api/v1/sync/pull", request, cancellationToken).ConfigureAwait(false);
         return await ReadAsync<SyncPullResult>(response, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<TenantBootstrapResult> BootstrapAsync(TenantBootstrapRequest request, CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.PostAsJsonAsync("/api/v1/tenant/bootstrap", request, cancellationToken).ConfigureAwait(false);
+        return await ReadAsync<TenantBootstrapResult>(response, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<T> ReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
