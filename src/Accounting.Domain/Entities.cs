@@ -20,10 +20,13 @@ public sealed class Company : TenantEntity
 
     private Company() { }
 
-    public Company(string name, CompanyPolicy policy)
+    public Company(string name, CompanyPolicy policy) : this(UuidV7.NewGuid(), name, policy) { }
+
+    public Company(Guid id, string name, CompanyPolicy policy)
     {
-        Id = UuidV7.NewGuid();
-        CompanyId = Id;
+        if (id == Guid.Empty) throw new AccountingDomainException("Company id is required.");
+        Id = id;
+        CompanyId = id;
         BranchId = Guid.Empty;
         Name = string.IsNullOrWhiteSpace(name) ? throw new AccountingDomainException("Company name is required.") : name.Trim();
         Apply(policy);
@@ -53,11 +56,14 @@ public sealed class Branch : TenantEntity
     public string Code { get; private set; } = string.Empty;
     public string Name { get; private set; } = string.Empty;
     private Branch() { }
-    public Branch(Guid companyId, string code, string name)
+    public Branch(Guid companyId, string code, string name) : this(companyId, UuidV7.NewGuid(), code, name) { }
+
+    public Branch(Guid companyId, Guid branchId, string code, string name)
     {
-        Id = UuidV7.NewGuid();
+        if (companyId == Guid.Empty || branchId == Guid.Empty) throw new AccountingDomainException("Company and branch ids are required.");
+        Id = branchId;
         CompanyId = companyId;
-        BranchId = Id;
+        BranchId = branchId;
         Code = Required(code, "Branch code");
         Name = Required(name, "Branch name");
     }
@@ -70,8 +76,13 @@ public sealed class AppUser : TenantEntity
     public string DisplayName { get; private set; } = string.Empty;
     public bool IsActive { get; private set; }
     private AppUser() { }
-    public AppUser(Guid companyId, Guid branchId, string userName, string displayName) : base(companyId, branchId)
+    public AppUser(Guid companyId, Guid branchId, string userName, string displayName, Guid? userId = null) : base(companyId, branchId)
     {
+        if (userId.HasValue)
+        {
+            if (userId.Value == Guid.Empty) throw new AccountingDomainException("User id cannot be empty.");
+            Id = userId.Value;
+        }
         UserName = string.IsNullOrWhiteSpace(userName) ? throw new AccountingDomainException("User name is required.") : userName.Trim();
         DisplayName = string.IsNullOrWhiteSpace(displayName) ? throw new AccountingDomainException("Display name is required.") : displayName.Trim();
         IsActive = true;
