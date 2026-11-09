@@ -1,6 +1,6 @@
 namespace Accounting.UI.Android;
 
-public sealed class App : Application
+public sealed class App : Microsoft.Maui.Controls.Application
 {
     private readonly MobileSessionSettings _settings;
     private readonly MobileRuntime _runtime;
