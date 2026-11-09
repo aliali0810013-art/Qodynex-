@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Accounting.UI.Windows;
 
-public sealed record ItemLookup(Guid Id, string Sku, string Name, Guid BaseUnitOfMeasureId, ItemKind ItemKind);
+public sealed record ItemLookup(Guid Id, string Sku, string Name, string? Barcode, Guid BaseUnitOfMeasureId, ItemKind ItemKind);
 public sealed record PartnerLookup(Guid Id, string Code, string Name, Guid ControlAccountId, decimal CreditLimit);
 public sealed record AccountLookup(Guid Id, string Code, string Name);
 public sealed record InvoiceDraftLine(Guid ItemId, Guid UnitOfMeasureId, decimal Quantity, decimal BaseUnitsPerUnit, decimal UnitPrice);
@@ -33,9 +33,9 @@ public sealed class WindowsAccountingFacade
         text = text.Trim();
         return await _db.Items.AsNoTracking()
             .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive
-                && (text == "" || x.Sku.Contains(text) || x.Name.Contains(text)))
+                && (text == "" || x.Sku.Contains(text) || x.Name.Contains(text) || (x.Barcode != null && x.Barcode.Contains(text))))
             .OrderBy(x => x.Name).Take(50)
-            .Select(x => new ItemLookup(x.Id, x.Sku, x.Name, x.BaseUnitOfMeasureId, x.ItemKind))
+            .Select(x => new ItemLookup(x.Id, x.Sku, x.Name, x.Barcode, x.BaseUnitOfMeasureId, x.ItemKind))
             .ToListAsync(ct).ConfigureAwait(false);
     }
 
@@ -44,7 +44,7 @@ public sealed class WindowsAccountingFacade
         var value = code.Trim();
         if (value.Length == 0) return null;
         return await _db.Items.AsNoTracking()
-            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive && x.Sku == value)
+            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive && (x.Sku == value || x.Barcode == value))
             .Select(x => new ItemLookup(x.Id, x.Sku, x.Name, x.BaseUnitOfMeasureId, x.ItemKind))
             .SingleOrDefaultAsync(ct).ConfigureAwait(false);
     }
