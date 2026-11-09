@@ -417,8 +417,13 @@ public sealed class SyncPushCommandHandler
         var moduleKey = payload.Document.ModuleKey.Trim().ToUpperInvariant();
         if (moduleKey == "SERVICES" && items.Any(x => x.ItemKind != ItemKind.Service))
             throw new AccountingDomainException("Services module documents cannot contain stock items.");
-        if (moduleKey == "RETAIL" && items.Any(x => x.ItemKind != ItemKind.Stock))
-            throw new AccountingDomainException("Retail module documents cannot contain service items.");
+        if (moduleKey == "RETAIL")
+        {
+            if (items.Any(x => x.ItemKind != ItemKind.Stock))
+                throw new AccountingDomainException("Retail module documents cannot contain service items.");
+            if (policy.TaxPolicy.Enabled && !policy.TaxPolicy.PricesIncludeTax)
+                throw new AccountingDomainException("Retail module requires tax-inclusive pricing when tax is enabled.");
+        }
         if (moduleKey == "RESTAURANT")
         {
             if (payload.Document.DocumentType != "SalesInvoice")
