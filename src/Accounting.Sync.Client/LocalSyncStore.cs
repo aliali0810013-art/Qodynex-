@@ -173,6 +173,26 @@ ON CONFLICT(Id) DO UPDATE SET Code=excluded.Code, Name=excluded.Name, AllowNegat
 """, cancellationToken).ConfigureAwait(false);
         }
 
+        foreach (var module in bootstrap.ModuleConfigurations)
+        {
+            var key = module.ModuleKey.Trim().ToUpperInvariant();
+            var row = await _db.LocalModuleConfigurations.SingleOrDefaultAsync(
+                x => x.CompanyId == user.CompanyId && x.BranchId == user.BranchId && x.ModuleKey == key,
+                cancellationToken).ConfigureAwait(false);
+            if (row is null)
+            {
+                row = new LocalModuleConfiguration
+                {
+                    Id = UuidV7.NewGuid(),
+                    CompanyId = user.CompanyId,
+                    BranchId = user.BranchId,
+                    ModuleKey = key
+                };
+                _db.LocalModuleConfigurations.Add(row);
+            }
+            row.ConfigurationJson = string.IsNullOrWhiteSpace(module.ConfigurationJson) ? "{}" : module.ConfigurationJson;
+        }
+
         var state = await GetOrCreateStateAsync(user, cancellationToken).ConfigureAwait(false);
         state.CompanyName = bootstrap.CompanyName;
         state.BranchName = bootstrap.BranchName;
