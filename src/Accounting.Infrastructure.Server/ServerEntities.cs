@@ -36,6 +36,12 @@ public sealed class ServerTenantProfile : ServerTenantEntity
     public string EnabledModulesCsv { get; set; } = "RETAIL";
 }
 
+public sealed class ServerModuleConfiguration : ServerTenantEntity
+{
+    public string ModuleKey { get; set; } = string.Empty;
+    public string ConfigurationJson { get; set; } = "{}";
+}
+
 public sealed class ServerAccount : ServerTenantEntity
 {
     public string Code { get; set; } = string.Empty;
