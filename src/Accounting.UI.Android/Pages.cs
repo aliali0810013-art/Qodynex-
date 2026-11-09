@@ -388,6 +388,7 @@ public sealed class SalePage : ContentPage
             existing.Quantity += 1m;
         else
         {
+            var suggestedPrice = await _runtime.Facade.GetSuggestedUnitPriceAsync(_moduleKey, item.Id, 1m, 0m).ConfigureAwait(true);
             var row = new MobileSaleLineViewModel
             {
                 ItemId = item.Id,
@@ -395,7 +396,7 @@ public sealed class SalePage : ContentPage
                 Sku = item.Sku,
                 Name = item.Name,
                 Quantity = 1m,
-                UnitPrice = 0m
+                UnitPrice = suggestedPrice
             };
             row.PropertyChanged += (_, args) =>
             {
