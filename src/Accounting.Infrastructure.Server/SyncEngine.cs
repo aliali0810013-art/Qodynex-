@@ -532,6 +532,11 @@ public sealed class SyncPushCommandHandler
                     throw new ServerSyncConflictException("INVENTORY_COST_CONFLICT",
                         $"Offline inventory credit account {expected.Key} does not match authoritative server valuation.");
 
+            if (moduleKey == "WHOLESALE")
+            {
+                await ValidateWholesalePricingAsync(payload, policy, cancellationToken).ConfigureAwait(false);
+            }
+
             if (moduleKey == "WHOLESALE" && payload.Document.BusinessPartnerId is Guid partnerId)
             {
                 var partner = await _db.BusinessPartners.AsNoTracking().SingleOrDefaultAsync(x => x.Id == partnerId, cancellationToken).ConfigureAwait(false)
@@ -583,6 +588,77 @@ public sealed class SyncPushCommandHandler
         var stockItemIds = expectedStockQty.Keys.ToHashSet();
         if (payload.StockEntries.Any(x => !stockItemIds.Contains(x.ItemId)))
             throw new AccountingDomainException("Sync payload contains stock entries not supported by the source invoice lines.");
+    }
+
+    private async Task ValidateWholesalePricingAsync(
+        PostedOperationSyncPayload payload,
+        CompanyPolicy policy,
+        CancellationToken cancellationToken)
+    {
+        var configuration = await _db.ModuleConfigurations.AsNoTracking()
+            .Where(x => x.ModuleKey == "WHOLESALE")
+            .Select(x => x.ConfigurationJson)
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(configuration) || configuration == "{}") return;
+
+        using var document = JsonDocument.Parse(configuration);
+        if (!TryGetPropertyIgnoreCase(document.RootElement, "priceTiers", out var tiersElement)
+            || tiersElement.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var line in payload.Document.Lines)
+        {
+            var baseQuantity = _currency.MultiplyQuantity(line.Quantity, line.BaseUnitsPerUnit, policy);
+            decimal? selectedPrice = null;
+            decimal selectedMinimum = -1m;
+
+            foreach (var tier in tiersElement.EnumerateArray())
+            {
+                if (!TryGetPropertyIgnoreCase(tier, "itemId", out var itemElement)
+                    || !Guid.TryParse(itemElement.GetString(), out var itemId)
+                    || itemId != line.ItemId
+                    || !TryGetPropertyIgnoreCase(tier, "minBaseQuantity", out var minimumElement)
+                    || !minimumElement.TryGetDecimal(out var minimum)
+                    || minimum <= 0m
+                    || minimum > baseQuantity
+                    || !TryGetPropertyIgnoreCase(tier, "unitPrice", out var priceElement)
+                    || !priceElement.TryGetDecimal(out var price)
+                    || price < 0m)
+                    continue;
+
+                if (minimum > selectedMinimum)
+                {
+                    selectedMinimum = minimum;
+                    selectedPrice = price;
+                }
+            }
+
+            if (selectedPrice.HasValue
+                && _currency.RoundMoney(line.UnitPrice, policy) != _currency.RoundMoney(selectedPrice.Value, policy))
+            {
+                throw new AccountingDomainException(
+                    $"Wholesale line price for item {line.ItemId} must match the authoritative tier price {selectedPrice.Value} at base quantity {baseQuantity}.");
+            }
+        }
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string name, out JsonElement value)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+            }
+        }
+
+        value = default;
+        return false;
     }
 
     private (decimal Net, decimal Tax, decimal Gross) Tax(decimal quantity, decimal unitPrice, CompanyPolicy policy)
