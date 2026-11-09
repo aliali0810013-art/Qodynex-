@@ -27,6 +27,7 @@ public sealed class LocalTempNumberGenerator
         catch
         {
             await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            _db.ChangeTracker.Clear();
             throw;
         }
     }
