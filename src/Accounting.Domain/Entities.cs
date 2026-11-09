@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Accounting.SharedKernel;
 
 namespace Accounting.Domain;
@@ -216,6 +217,7 @@ public abstract class CommercialDocument : TenantEntity, IImmutablePostedEntity
 {
     public string LocalTempNumber { get; private set; } = string.Empty;
     public string ModuleKey { get; private set; } = string.Empty;
+    public string ModuleMetadataJson { get; private set; } = "{}";
     public PostingStatus Status { get; private set; }
     public DateTimeOffset DocumentDateUtc { get; private set; }
     public DateTimeOffset? PostedAtUtc { get; private set; }
@@ -228,6 +230,14 @@ public abstract class CommercialDocument : TenantEntity, IImmutablePostedEntity
         LocalTempNumber = string.IsNullOrWhiteSpace(localTempNumber) ? throw new AccountingDomainException("Local temporary number is required.") : localTempNumber.Trim();
         ModuleKey = string.IsNullOrWhiteSpace(moduleKey) ? throw new AccountingDomainException("Module key is required.") : moduleKey.Trim();
         DocumentDateUtc = date; Status = PostingStatus.Draft;
+    }
+
+    public void SetModuleMetadata(string json)
+    {
+        if (Status == PostingStatus.Posted) throw new AccountingDomainException("Posted document module metadata is immutable.");
+        if (string.IsNullOrWhiteSpace(json)) { ModuleMetadataJson = "{}"; return; }
+        using var _ = JsonDocument.Parse(json);
+        ModuleMetadataJson = json;
     }
 
     public void MarkPosted(Guid operationId, string idempotencyKey, DateTimeOffset postedAtUtc)
