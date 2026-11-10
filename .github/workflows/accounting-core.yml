@@ -113,6 +113,36 @@ jobs:
           test -n "$apk"
           cp "$apk" dist/Qodynex-Android.apk
           test -s dist/Qodynex-Android.apk
+      - name: Enable KVM for Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Smoke-test Qodynex-Android.apk on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          script: |
+            adb install -r dist/Qodynex-Android.apk
+            adb logcat -c
+            adb shell monkey -p tech.qodynex.accounting -c android.intent.category.LAUNCHER 1
+            for i in $(seq 1 12); do
+              pid="$(adb shell pidof tech.qodynex.accounting | tr -d '\r')"
+              if [ -n "$pid" ]; then
+                adb shell uiautomator dump /sdcard/qodynex-window.xml >/dev/null 2>&1 || true
+                if adb shell cat /sdcard/qodynex-window.xml 2>/dev/null | grep -q "Qodynex Demo"; then
+                  echo "Qodynex Android cold-start reached the seeded home page."
+                  exit 0
+                fi
+              fi
+              sleep 3
+            done
+            echo "Qodynex Android did not reach the seeded home page."
+            adb logcat -d -t 500
+            exit 1
       - name: Upload clean Android APK
         uses: actions/upload-artifact@v4
         with:
