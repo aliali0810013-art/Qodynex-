@@ -165,36 +165,27 @@ public sealed class MobileRuntime : IAsyncDisposable
     private async Task BuildServicesAsync(CancellationToken cancellationToken)
     {
         if (Db is null) throw new InvalidOperationException("Local database is not initialized.");
-        var store = new EfAccountingDataStore(Db);
-        var currency = new CurrencyPolicyService();
-        var inventory = new InventoryValuationEngine(currency);
-        var queries = new AccountingQueryService(store, currency, inventory);
-        var modules = new IActivityModule[]
-        {
-            new RetailModule(store),
-            new WholesaleModule(store, queries, currency),
-            new ServicesModule(store),
-            new RestaurantModule()
-        };
-        ModuleRegistry = new ModuleRegistry(modules);
 
-        var state = await Db.LocalSyncStates.AsNoTracking().SingleOrDefaultAsync(
-            x => x.CompanyId == UserContext.CompanyId && x.BranchId == UserContext.BranchId && x.DeviceId == UserContext.DeviceId,
+        var composition = await MobileColdStartComposer.BuildAsync(
+            Db,
+            UserContext,
             cancellationToken).ConfigureAwait(false);
-        EnabledModules = (state?.EnabledModulesCsv ?? "RETAIL")
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(x => x.ToUpperInvariant()).Distinct().ToArray();
-        _ = ModuleRegistry.ResolveEnabled(EnabledModules);
-        CompanyName = state?.CompanyName ?? string.Empty;
-        BranchName = state?.BranchName ?? string.Empty;
 
-        var posting = new AccountingPostingEngine(store, new SqliteUnitOfWork(Db), new PermissionGuard(new EfUserAuthorizationReader(Db)),
-            new DocumentPostingRuleRegistry(ModuleRegistry.PostingRules(EnabledModules)), currency, inventory, new SystemClock());
-        Facade = new MobileAccountingFacade(Db, posting, queries, new LocalTempNumberGenerator(Db), UserContext);
+        Facade = composition.Facade;
+        ModuleRegistry = composition.ModuleRegistry;
+        EnabledModules = composition.EnabledModules;
+        CompanyName = composition.CompanyName;
+        BranchName = composition.BranchName;
+
         SyncStore = new LocalSyncStore(Db);
         SyncCoordinator = _transport is null
             ? null
-            : new BackgroundSyncCoordinator(_transport, SyncStore, new SystemNetworkAvailability(), UserContext, new SystemClock());
+            : new BackgroundSyncCoordinator(
+                _transport,
+                SyncStore,
+                new SystemNetworkAvailability(),
+                UserContext,
+                new SystemClock());
     }
 
     public async Task ResetAsync(CancellationToken cancellationToken = default)
