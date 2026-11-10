@@ -6,8 +6,19 @@ using Accounting.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Accounting.Infrastructure.Local;
+
+// SQLite stores every instant as an INTEGER with UTC ticks (including nullable
+// DateTimeOffset properties). Unlike DateTimeOffsetToBinaryConverter this preserves
+// chronological ordering across different input UTC offsets.
+public sealed class UtcDateTimeOffsetTicksConverter : ValueConverter<DateTimeOffset, long>
+{
+    public UtcDateTimeOffsetTicksConverter() : base(
+        value => value.UtcDateTime.Ticks,
+        ticks => new DateTimeOffset(ticks, TimeSpan.Zero)) { }
+}
 
 public sealed class LocalAccountingDbContext : DbContext
 {
@@ -44,6 +55,14 @@ public sealed class LocalAccountingDbContext : DbContext
     public DbSet<LocalSyncConflict> LocalSyncConflicts => Set<LocalSyncConflict>();
     public DbSet<LocalSequenceCounter> LocalSequenceCounters => Set<LocalSequenceCounter>();
     public DbSet<LocalModuleConfiguration> LocalModuleConfigurations => Set<LocalModuleConfiguration>();
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        base.ConfigureConventions(configurationBuilder);
+        configurationBuilder.Properties<DateTimeOffset>()
+            .HaveConversion<UtcDateTimeOffsetTicksConverter>()
+            .HaveColumnType("INTEGER");
+    }
 
     protected override void OnModelCreating(ModelBuilder m)
     {
@@ -146,7 +165,16 @@ public sealed class LocalAccountingDbContext : DbContext
         m.Entity<Item>().HasIndex(x => new { x.CompanyId, x.BranchId, x.Sku }).IsUnique();
         m.Entity<ItemUnitConversion>().HasIndex(x => new { x.CompanyId, x.BranchId, x.ItemId, x.UnitOfMeasureId }).IsUnique();
         m.Entity<Warehouse>().HasIndex(x => new { x.CompanyId, x.BranchId, x.Code }).IsUnique();
-        m.Entity<StockLedgerEntry>().HasIndex(x => new { x.CompanyId, x.BranchId, x.ItemId, x.WarehouseId, x.PostedAtUtc });
+        m.Entity<StockLedgerEntry>().HasIndex(x => new { x.CompanyId, x.BranchId, x.ItemId, x.WarehouseId, x.PostedAtUtc, x.Id })
+            .HasDatabaseName("IX_StockLedgerEntries_Tenant_Item_Warehouse_Date");
+        m.Entity<StockLedgerEntry>().HasIndex(x => new { x.CompanyId, x.BranchId, x.SourceDocumentId, x.PostedAtUtc, x.Id })
+            .HasDatabaseName("IX_StockLedgerEntries_Tenant_Source_Date");
+        m.Entity<JournalEntry>().HasIndex(x => new { x.CompanyId, x.BranchId, x.Status, x.EntryDateUtc, x.Id })
+            .HasDatabaseName("IX_JournalEntries_Tenant_Status_Date");
+        m.Entity<JournalLine>().HasIndex(x => new { x.CompanyId, x.BranchId, x.AccountId, x.JournalEntryId, x.Id })
+            .HasDatabaseName("IX_JournalLines_Tenant_Account_Entry");
+        m.Entity<OutboxMessage>().HasIndex(x => new { x.CompanyId, x.BranchId, x.Status, x.CreatedAtUtc, x.Id })
+            .HasDatabaseName("IX_OutboxMessages_Tenant_Status_Date");
         m.Entity<OutboxMessage>().HasIndex(x => new { x.CompanyId, x.BranchId, x.IdempotencyKey }).IsUnique();
         m.Entity<OfficialSequenceAssignment>().HasIndex(x => new { x.CompanyId, x.BranchId, x.DocumentId }).IsUnique();
         m.Entity<DocumentReversalRecord>().HasIndex(x => new { x.CompanyId, x.BranchId, x.SourceDocumentId }).IsUnique();

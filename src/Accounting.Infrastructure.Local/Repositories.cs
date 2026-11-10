@@ -42,40 +42,45 @@ public sealed class EfAccountingDataStore : IAccountingDataStore
 
     public async Task<IReadOnlyList<StockLedgerEntry>> GetStockLedgerAsync(Guid c, Guid b, Guid itemId, Guid warehouseId, CancellationToken ct)
     {
-        var entries = await _db.StockLedgerEntries.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.ItemId == itemId && x.WarehouseId == warehouseId).ToListAsync(ct).ConfigureAwait(false);
-        return entries.OrderBy(x => x.PostedAtUtc).ThenBy(x => x.Id).ToList();
+        // The UTC-ticks conversion allows SQLite to sort by the indexed timestamp.
+        // WAC/FIFO require all ledger rows for this single item and warehouse.
+        return await _db.StockLedgerEntries.AsNoTracking()
+            .Where(x => x.CompanyId == c && x.BranchId == b && x.ItemId == itemId && x.WarehouseId == warehouseId)
+            .OrderBy(x => x.PostedAtUtc).ThenBy(x => x.Id)
+            .ToListAsync(ct).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<JournalLine>> GetPostedJournalLinesAsync(Guid c, Guid b, Guid accountId, CancellationToken ct)
     {
-        var rows = await (from line in _db.JournalLines.AsNoTracking()
-                          join entry in _db.JournalEntries.AsNoTracking() on line.JournalEntryId equals entry.Id
-                          where line.CompanyId == c && line.BranchId == b && line.AccountId == accountId && entry.Status == PostingStatus.Posted
-                          select new { Line = line, entry.EntryDateUtc }).ToListAsync(ct).ConfigureAwait(false);
-        return rows.OrderBy(x => x.EntryDateUtc).ThenBy(x => x.Line.Id).Select(x => x.Line).ToList();
+        return await (from line in _db.JournalLines.AsNoTracking()
+                      join entry in _db.JournalEntries.AsNoTracking() on line.JournalEntryId equals entry.Id
+                      where line.CompanyId == c && line.BranchId == b && line.AccountId == accountId
+                         && entry.CompanyId == c && entry.BranchId == b && entry.Status == PostingStatus.Posted
+                      orderby entry.EntryDateUtc, line.Id
+                      select line).ToListAsync(ct).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<JournalLine>> GetPostedJournalLinesForBusinessPartnerAsync(Guid c, Guid b, Guid partnerId, Guid accountId, CancellationToken ct)
     {
-        var sourceIds = new HashSet<Guid>();
-        foreach (var id in await _db.SalesInvoices.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.BusinessPartnerId == partnerId).Select(x => x.Id).ToListAsync(ct).ConfigureAwait(false)) sourceIds.Add(id);
-        foreach (var id in await _db.PurchaseInvoices.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.BusinessPartnerId == partnerId).Select(x => x.Id).ToListAsync(ct).ConfigureAwait(false)) sourceIds.Add(id);
-        foreach (var id in await _db.ReceiptVouchers.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.BusinessPartnerId == partnerId).Select(x => x.Id).ToListAsync(ct).ConfigureAwait(false)) sourceIds.Add(id);
-        foreach (var id in await _db.PaymentVouchers.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.BusinessPartnerId == partnerId).Select(x => x.Id).ToListAsync(ct).ConfigureAwait(false)) sourceIds.Add(id);
-
-        if (sourceIds.Count == 0) return Array.Empty<JournalLine>();
-        var rows = await (from line in _db.JournalLines.AsNoTracking()
-                          join entry in _db.JournalEntries.AsNoTracking() on line.JournalEntryId equals entry.Id
-                          where line.CompanyId == c && line.BranchId == b && line.AccountId == accountId
-                                && entry.Status == PostingStatus.Posted && sourceIds.Contains(entry.SourceDocumentId)
-                          select new { Line = line, entry.EntryDateUtc }).ToListAsync(ct).ConfigureAwait(false);
-        return rows.OrderBy(x => x.EntryDateUtc).ThenBy(x => x.Line.Id).Select(x => x.Line).ToList();
+        // Translate four EXISTS clauses rather than materializing all partner document IDs.
+        return await (from line in _db.JournalLines.AsNoTracking()
+                      join entry in _db.JournalEntries.AsNoTracking() on line.JournalEntryId equals entry.Id
+                      where line.CompanyId == c && line.BranchId == b && line.AccountId == accountId
+                         && entry.CompanyId == c && entry.BranchId == b && entry.Status == PostingStatus.Posted
+                         && (_db.SalesInvoices.Any(d => d.CompanyId == c && d.BranchId == b && d.Id == entry.SourceDocumentId && d.BusinessPartnerId == partnerId)
+                          || _db.PurchaseInvoices.Any(d => d.CompanyId == c && d.BranchId == b && d.Id == entry.SourceDocumentId && d.BusinessPartnerId == partnerId)
+                          || _db.ReceiptVouchers.Any(d => d.CompanyId == c && d.BranchId == b && d.Id == entry.SourceDocumentId && d.BusinessPartnerId == partnerId)
+                          || _db.PaymentVouchers.Any(d => d.CompanyId == c && d.BranchId == b && d.Id == entry.SourceDocumentId && d.BusinessPartnerId == partnerId))
+                      orderby entry.EntryDateUtc, line.Id
+                      select line).ToListAsync(ct).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<StockLedgerEntry>> GetStockBySourceDocumentAsync(Guid c, Guid b, Guid documentId, CancellationToken ct)
     {
-        var entries = await _db.StockLedgerEntries.AsNoTracking().Where(x => x.CompanyId == c && x.BranchId == b && x.SourceDocumentId == documentId).ToListAsync(ct).ConfigureAwait(false);
-        return entries.OrderBy(x => x.PostedAtUtc).ThenBy(x => x.Id).ToList();
+        return await _db.StockLedgerEntries.AsNoTracking()
+            .Where(x => x.CompanyId == c && x.BranchId == b && x.SourceDocumentId == documentId)
+            .OrderBy(x => x.PostedAtUtc).ThenBy(x => x.Id)
+            .ToListAsync(ct).ConfigureAwait(false);
     }
 
     public Task<JournalEntry?> FindJournalByIdempotencyKeyAsync(Guid c, Guid b, string key, CancellationToken ct) =>

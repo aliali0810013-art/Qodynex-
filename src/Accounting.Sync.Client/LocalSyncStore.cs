@@ -24,17 +24,13 @@ public sealed class LocalSyncStore
     public async Task<IReadOnlyList<SyncEnvelope>> GetPendingEnvelopesAsync(UserContext user, int take, CancellationToken cancellationToken = default)
     {
         DemandTenant(user);
-        // SQLite cannot translate DateTimeOffset ORDER BY. Filter per tenant on
-        // the database, then preserve stable oldest-first ordering in memory.
-        // Do not apply Take before sorting or older pending operations may starve.
-        var pending = await _db.OutboxMessages.AsNoTracking()
+        // Stable, index-backed LIMIT is executed inside SQLite, before materialization.
+        var messages = await _db.OutboxMessages.AsNoTracking()
             .Where(x => x.CompanyId == user.CompanyId && x.BranchId == user.BranchId
                 && (x.Status == OutboxStatus.Pending || x.Status == OutboxStatus.Failed))
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
-        var messages = pending.OrderBy(x => x.CreatedAtUtc)
-            .ThenBy(x => x.Id)
+            .OrderBy(x => x.CreatedAtUtc).ThenBy(x => x.Id)
             .Take(Math.Clamp(take, 1, SyncProtocol.MaxBatchSize))
-            .ToList();
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
 
         return messages.Select(x => new SyncEnvelope(
             x.Id,
@@ -401,9 +397,9 @@ ON CONFLICT(Id) DO UPDATE SET Code=excluded.Code, Name=excluded.Name, AllowNegat
 INSERT INTO JournalEntries
 (Id, CompanyId, BranchId, EntryDateUtc, Description, Reference, Status, SourceDocumentId, SourceDocumentType, OperationId, IdempotencyKey, ReversedEntryId, PostedAtUtc)
 VALUES
-({payload.Journal.Id}, {user.CompanyId}, {user.BranchId}, {payload.Journal.EntryDateUtc}, {payload.Journal.Description}, {payload.Journal.Reference},
+({payload.Journal.Id}, {user.CompanyId}, {user.BranchId}, {payload.Journal.EntryDateUtc.UtcDateTime.Ticks}, {payload.Journal.Description}, {payload.Journal.Reference},
 {(int)PostingStatus.Posted}, {payload.Journal.SourceDocumentId}, {payload.Journal.SourceDocumentType}, {payload.Journal.OperationId},
-{payload.Journal.IdempotencyKey}, {payload.Journal.ReversedEntryId}, {accepted.ServerTimestampUtc});
+{payload.Journal.IdempotencyKey}, {payload.Journal.ReversedEntryId}, {accepted.ServerTimestampUtc.UtcDateTime.Ticks});
 """, cancellationToken).ConfigureAwait(false);
 
             foreach (var line in payload.Journal.Lines)
@@ -427,7 +423,7 @@ INSERT INTO StockLedgerEntries
 VALUES
 ({stock.Id}, {user.CompanyId}, {user.BranchId}, {stock.ItemId}, {stock.WarehouseId}, {stock.SourceDocumentId},
  {stock.SourceDocumentType}, {stock.OperationId}, {stock.MovementType}, {stock.QuantityDelta}, {stock.InventoryValueDelta},
- {stock.UnitCost}, {stock.ReversedStockLedgerEntryId}, {(int)PostingStatus.Posted}, {stock.PostedAtUtc});
+ {stock.UnitCost}, {stock.ReversedStockLedgerEntryId}, {(int)PostingStatus.Posted}, {stock.PostedAtUtc.UtcDateTime.Ticks});
 """, cancellationToken).ConfigureAwait(false);
         }
 
@@ -485,7 +481,7 @@ INSERT INTO Documents
  VoucherDescription, WarehouseId, SettlementAccountId)
 VALUES
 ({document.Id}, {document.CompanyId}, {document.BranchId}, {document.LocalTempNumber}, {document.ModuleKey}, {document.ModuleMetadataJson},
- {(int)PostingStatus.Posted}, {document.DocumentDateUtc}, {postedAtUtc}, {journal.OperationId}, {journal.IdempotencyKey},
+ {(int)PostingStatus.Posted}, {document.DocumentDateUtc.UtcDateTime.Ticks}, {postedAtUtc.UtcDateTime.Ticks}, {journal.OperationId}, {journal.IdempotencyKey},
  {document.DocumentType}, {cash}, {counter}, {businessPartner}, {voucherAmount}, {voucherDescription}, {warehouse}, {settlement});
 """, cancellationToken).ConfigureAwait(false);
     }
