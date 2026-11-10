@@ -185,6 +185,13 @@ public partial class App : System.Windows.Application
         }
         catch (Exception ex)
         {
+            if (e.Args.Any(x => string.Equals(x, "--cold-start-check", StringComparison.OrdinalIgnoreCase)))
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+                Shutdown(1);
+                return;
+            }
+
             ShowFatal("تعذر تشغيل Qodynex", ex);
             Shutdown(1);
         }
