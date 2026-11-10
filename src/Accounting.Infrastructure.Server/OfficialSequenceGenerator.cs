@@ -58,6 +58,22 @@ RETURNING "CurrentValue";
         return new OfficialSequenceAllocation($"{Prefix(documentType)}-{year}-{sequence:000000}", sequence);
     }
 
+    // Official number allocation and COMMIT must be retried as one unit:
+    // retrying only NextAsync would leave an aborted serializable transaction.
+    public Task<OfficialSequenceAllocation> NextInTransactionAsync(
+        Guid companyId, Guid branchId, string documentType, DateTimeOffset date,
+        TenantPostgresSession session, CancellationToken cancellationToken = default) =>
+        PostgresTransactionalRetry.ExecuteAsync(_db, async ct =>
+        {
+            await using var transaction = await _db.Database.BeginTransactionAsync(
+                System.Data.IsolationLevel.Serializable, ct).ConfigureAwait(false);
+            await session.ApplyAsync(ct).ConfigureAwait(false);
+            var allocation = await NextAsync(companyId, branchId, documentType, date, ct).ConfigureAwait(false);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            await transaction.CommitAsync(ct).ConfigureAwait(false);
+            return allocation;
+        }, cancellationToken);
+
     private static string Prefix(string documentType) => documentType switch
     {
         "SalesInvoice" => "INV",

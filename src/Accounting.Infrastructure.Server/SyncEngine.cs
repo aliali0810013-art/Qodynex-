@@ -98,7 +98,11 @@ public sealed class SyncPushCommandHandler
             throw new UnauthorizedAccessException($"JWT lacks required permission '{required}'.");
     }
 
-    private async Task<SyncAck> ProcessMessageAsync(SyncEnvelope envelope, CancellationToken cancellationToken)
+    private Task<SyncAck> ProcessMessageAsync(SyncEnvelope envelope, CancellationToken cancellationToken) =>
+        PostgresTransactionalRetry.ExecuteAsync(_db,
+            ct => ProcessMessageOnceAsync(envelope, ct), cancellationToken);
+
+    private async Task<SyncAck> ProcessMessageOnceAsync(SyncEnvelope envelope, CancellationToken cancellationToken)
     {
         await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
         await _session.ApplyAsync(cancellationToken).ConfigureAwait(false);
