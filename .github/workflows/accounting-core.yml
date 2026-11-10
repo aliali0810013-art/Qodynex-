@@ -60,6 +60,15 @@ jobs:
         run: dotnet restore src/Accounting.UI.Windows/Accounting.UI.Windows.csproj
       - name: Build Windows app
         run: dotnet build src/Accounting.UI.Windows/Accounting.UI.Windows.csproj --configuration Release --no-restore
+      - name: Publish runnable Windows x64 application
+        run: dotnet publish src/Accounting.UI.Windows/Accounting.UI.Windows.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishReadyToRun=false --output dist/qodynex-windows-client
+      - name: Upload Windows client
+        uses: actions/upload-artifact@v4
+        with:
+          name: qodynex-windows-client
+          path: dist/qodynex-windows-client/
+          if-no-files-found: error
+          retention-days: 14
 
   android:
     runs-on: ubuntu-latest
@@ -74,3 +83,21 @@ jobs:
         run: dotnet restore src/Accounting.UI.Android/Accounting.UI.Android.csproj
       - name: Build Android app
         run: dotnet build src/Accounting.UI.Android/Accounting.UI.Android.csproj --framework net8.0-android --configuration Release --no-restore
+      # CI generates an installable test APK; production distribution requires a
+      # privately managed signing key and explicit release signing configuration.
+      - name: Publish Android APK
+        run: |
+          dotnet publish src/Accounting.UI.Android/Accounting.UI.Android.csproj \
+            --framework net8.0-android --configuration Release \
+            -p:AndroidPackageFormats=apk -p:AndroidKeyStore=false \
+            -p:AndroidSignPackage=true
+          mkdir -p dist/qodynex-android-apk
+          find src/Accounting.UI.Android/bin/Release/net8.0-android -type f -name '*-Signed.apk' -exec cp {} dist/qodynex-android-apk/ \;
+          test -n "$(find dist/qodynex-android-apk -maxdepth 1 -name '*.apk' -print -quit)"
+      - name: Upload Android test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: qodynex-android-apk
+          path: dist/qodynex-android-apk/*.apk
+          if-no-files-found: error
+          retention-days: 14
