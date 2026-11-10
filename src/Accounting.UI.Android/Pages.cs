@@ -118,6 +118,7 @@ public sealed class SetupPage : ContentPage
             _settings.UserId = user;
             _settings.DeviceId = device;
             _settings.DeviceName = string.IsNullOrWhiteSpace(_deviceName.Text) ? "Android" : _deviceName.Text!;
+            _settings.MarkServerIdentity();
             await _settings.SetAccessTokenAsync(_token.Text!).ConfigureAwait(true);
 
             _status.Text = "جارٍ تسجيل الجهاز وتنزيل سياسة الشركة والبيانات الأساسية...";
