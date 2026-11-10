@@ -1,7 +1,9 @@
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Text.Json;
 using System.Windows;
+using System.Windows.Threading;
 using Accounting.Application;
 using Accounting.Domain;
 using Accounting.Infrastructure.Local;
@@ -17,64 +19,98 @@ public partial class App : System.Windows.Application
     private LocalAccountingDbContext? _db;
     private HttpClient? _httpClient;
 
+    public App()
+    {
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnAppDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        ShutdownMode = ShutdownMode.OnMainWindowClose;
+    }
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
         try
         {
-            var companyId = RequiredGuidEnvironment("QODYNEX_COMPANY_ID");
-            var branchId = RequiredGuidEnvironment("QODYNEX_BRANCH_ID");
-            var userId = RequiredGuidEnvironment("QODYNEX_USER_ID");
-            var deviceId = RequiredGuidEnvironment("QODYNEX_DEVICE_ID");
+            var root = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Qodynex");
+            Directory.CreateDirectory(root);
+
+            var (identity, localDemoMode) = await ResolveIdentityAsync(root).ConfigureAwait(true);
+            var companyId = identity.CompanyId;
+            var branchId = identity.BranchId;
+            var userId = identity.UserId;
+            var deviceId = identity.DeviceId;
             var userContext = UserContext.Authenticated(userId, companyId, branchId, deviceId);
 
-            var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Qodynex");
-            Directory.CreateDirectory(root);
-            var dbPath = Environment.GetEnvironmentVariable("QODYNEX_SQLITE_PATH")
-                         ?? Path.Combine(root, $"accounting-{companyId:N}-{branchId:N}.db");
+            var configuredPath = Environment.GetEnvironmentVariable("QODYNEX_SQLITE_PATH");
+            var dbPath = string.IsNullOrWhiteSpace(configuredPath)
+                ? Path.Combine(root, localDemoMode
+                    ? "qodynex-local.db"
+                    : $"accounting-{companyId:N}-{branchId:N}.db")
+                : Path.GetFullPath(configuredPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(dbPath) ?? root);
+
             var options = new DbContextOptionsBuilder<LocalAccountingDbContext>()
                 .UseSqlite($"Data Source={dbPath}")
                 .AddInterceptors(new ImmutabilityInterceptor())
                 .Options;
+
             _db = new LocalAccountingDbContext(options);
             await new LocalDatabaseBootstrapper(_db).InitializeAsync().ConfigureAwait(true);
             var localSync = new LocalSyncStore(_db);
 
             ISyncTransport? transport = null;
-            var serverUrl = Environment.GetEnvironmentVariable("QODYNEX_SERVER_URL");
-            var token = Environment.GetEnvironmentVariable("QODYNEX_ACCESS_TOKEN");
-            if (Uri.TryCreate(serverUrl, UriKind.Absolute, out var baseUri)
-                && baseUri.Scheme == Uri.UriSchemeHttps
-                && !string.IsNullOrWhiteSpace(token))
+            if (localDemoMode)
             {
-                _httpClient = new HttpClient { BaseAddress = baseUri, Timeout = TimeSpan.FromSeconds(30) };
-                _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                transport = new HttpSyncTransport(_httpClient);
-                try
+                await new LocalFirstRunBootstrapper(_db)
+                    .EnsureDemoSeedAsync(identity)
+                    .ConfigureAwait(true);
+            }
+            else
+            {
+                var serverUrl = Environment.GetEnvironmentVariable("QODYNEX_SERVER_URL");
+                var token = Environment.GetEnvironmentVariable("QODYNEX_ACCESS_TOKEN");
+                if (Uri.TryCreate(serverUrl, UriKind.Absolute, out var baseUri)
+                    && baseUri.Scheme == Uri.UriSchemeHttps
+                    && !string.IsNullOrWhiteSpace(token))
                 {
-                    await transport.RegisterDeviceAsync(new DeviceRegistrationRequest(
-                        deviceId,
-                        Environment.GetEnvironmentVariable("QODYNEX_DEVICE_NAME") ?? Environment.MachineName,
-                        "Windows",
-                        typeof(App).Assembly.GetName().Version?.ToString() ?? "1.0.0",
-                        SyncProtocol.CurrentClientSchemaVersion,
-                        SyncProtocol.CurrentProtocolVersion)).ConfigureAwait(true);
+                    _httpClient = new HttpClient { BaseAddress = baseUri, Timeout = TimeSpan.FromSeconds(30) };
+                    _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                    transport = new HttpSyncTransport(_httpClient);
+                    try
+                    {
+                        await transport.RegisterDeviceAsync(new DeviceRegistrationRequest(
+                            deviceId,
+                            Environment.GetEnvironmentVariable("QODYNEX_DEVICE_NAME") ?? Environment.MachineName,
+                            "Windows",
+                            typeof(App).Assembly.GetName().Version?.ToString() ?? "1.0.0",
+                            SyncProtocol.CurrentClientSchemaVersion,
+                            SyncProtocol.CurrentProtocolVersion)).ConfigureAwait(true);
 
-                    var bootstrap = await transport.BootstrapAsync(new TenantBootstrapRequest(
-                        SyncProtocol.CurrentClientSchemaVersion,
-                        SyncProtocol.CurrentProtocolVersion,
-                        deviceId)).ConfigureAwait(true);
-                    await localSync.ApplyBootstrapAsync(userContext, bootstrap).ConfigureAwait(true);
-                }
-                catch (Exception ex) when ((ex is HttpRequestException && ex is not SyncTransportException) || ex is TaskCanceledException)
-                {
-                    if (!await _db.Companies.AsNoTracking().AnyAsync(x => x.Id == companyId).ConfigureAwait(true))
-                        throw new InvalidOperationException("يلزم اتصال أولي ناجح بالخادم لتهيئة Windows قبل العمل دون إنترنت.", ex);
+                        var bootstrap = await transport.BootstrapAsync(new TenantBootstrapRequest(
+                            SyncProtocol.CurrentClientSchemaVersion,
+                            SyncProtocol.CurrentProtocolVersion,
+                            deviceId)).ConfigureAwait(true);
+                        await localSync.ApplyBootstrapAsync(userContext, bootstrap).ConfigureAwait(true);
+                    }
+                    catch (Exception ex) when ((ex is HttpRequestException && ex is not SyncTransportException)
+                                                || ex is TaskCanceledException)
+                    {
+                        if (!await _db.Companies.AsNoTracking()
+                                .AnyAsync(x => x.Id == companyId).ConfigureAwait(true))
+                            throw new InvalidOperationException(
+                                "تعذر الاتصال بالخادم ولا توجد تهيئة محلية محفوظة لهذا الحساب.", ex);
+                    }
                 }
             }
 
-            if (!await _db.Companies.AsNoTracking().AnyAsync(x => x.Id == companyId).ConfigureAwait(true))
-                throw new InvalidOperationException("لا توجد تهيئة محلية. وفر HTTPS server + JWT صالحاً لإجراء Bootstrap أول مرة.");
+            if (!await _db.Companies.AsNoTracking()
+                    .AnyAsync(x => x.Id == companyId).ConfigureAwait(true))
+                throw new InvalidOperationException(
+                    "تعذر العثور على بيانات الشركة محلياً. أعد تهيئة الحساب أو شغّل التطبيق بدون متغيرات ربط الخادم لاستخدام النسخة التجريبية المحلية.");
 
             var store = new EfAccountingDataStore(_db);
             var currency = new CurrencyPolicyService();
@@ -128,15 +164,19 @@ public partial class App : System.Windows.Application
                 userContext,
                 registry,
                 enabledModules,
-                state?.BranchName ?? branchId.ToString("N")[..8],
-                Environment.GetEnvironmentVariable("QODYNEX_USER_NAME") ?? userId.ToString("N")[..8]);
-            var window = new MainShellWindow(shell, coordinator);
-            MainWindow = window;
-            window.Show();
+                state?.BranchName ?? "الفرع الرئيسي",
+                localDemoMode
+                    ? "مستخدم تجريبي"
+                    : Environment.GetEnvironmentVariable("QODYNEX_USER_NAME") ?? userId.ToString("N")[..8]);
+
+            var mainWindow = new MainShellWindow(shell, coordinator);
+            MainWindow = mainWindow;
+            mainWindow.Show();
+            mainWindow.Activate();
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "Qodynex startup error", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowFatal("تعذر تشغيل Qodynex", ex);
             Shutdown(1);
         }
     }
@@ -148,11 +188,76 @@ public partial class App : System.Windows.Application
         base.OnExit(e);
     }
 
-    private static Guid RequiredGuidEnvironment(string name)
+    private static async Task<(LocalClientIdentity Identity, bool LocalDemoMode)> ResolveIdentityAsync(string root)
     {
-        var value = Environment.GetEnvironmentVariable(name);
-        if (!Guid.TryParse(value, out var parsed) || parsed == Guid.Empty)
-            throw new InvalidOperationException($"{name} must contain a valid non-empty GUID.");
-        return parsed;
+        var names = new[]
+        {
+            "QODYNEX_COMPANY_ID",
+            "QODYNEX_BRANCH_ID",
+            "QODYNEX_USER_ID",
+            "QODYNEX_DEVICE_ID"
+        };
+        var values = names.Select(Environment.GetEnvironmentVariable).ToArray();
+        var hasAnyServerIdentity = values.Any(x => !string.IsNullOrWhiteSpace(x));
+
+        if (hasAnyServerIdentity)
+        {
+            var ids = new Guid[4];
+            for (var index = 0; index < names.Length; index++)
+            {
+                if (!Guid.TryParse(values[index], out ids[index]) || ids[index] == Guid.Empty)
+                    throw new InvalidOperationException(
+                        $"عند استخدام ربط الخادم يجب ضبط {names[index]} بقيمة GUID صحيحة.");
+            }
+
+            return (new LocalClientIdentity(ids[0], ids[1], ids[2], ids[3]), false);
+        }
+
+        var identityPath = Path.Combine(root, "local-identity.json");
+        if (File.Exists(identityPath))
+        {
+            var json = await File.ReadAllTextAsync(identityPath).ConfigureAwait(false);
+            var saved = JsonSerializer.Deserialize<LocalClientIdentity>(json);
+            if (saved is not null
+                && saved.CompanyId != Guid.Empty
+                && saved.BranchId != Guid.Empty
+                && saved.UserId != Guid.Empty
+                && saved.DeviceId != Guid.Empty)
+                return (saved, true);
+        }
+
+        var identity = LocalClientIdentity.Create();
+        await File.WriteAllTextAsync(
+            identityPath,
+            JsonSerializer.Serialize(identity, new JsonSerializerOptions { WriteIndented = true }))
+            .ConfigureAwait(false);
+        return (identity, true);
+    }
+
+    private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        ShowFatal("خطأ غير معالج في واجهة Qodynex", e.Exception);
+        e.Handled = true;
+    }
+
+    private static void OnAppDomainUnhandledException(object? sender, UnhandledExceptionEventArgs e)
+    {
+        var exception = e.ExceptionObject as Exception
+                        ?? new Exception(e.ExceptionObject?.ToString() ?? "Unknown fatal error.");
+        ShowFatal("خطأ حرج في Qodynex", exception);
+    }
+
+    private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        ShowFatal("خطأ في مهمة خلفية داخل Qodynex", e.Exception);
+        e.SetObserved();
+    }
+
+    private static void ShowFatal(string title, Exception exception)
+    {
+        var details = exception.InnerException is null
+            ? exception.Message
+            : $"{exception.Message}\n\nالسبب: {exception.InnerException.Message}";
+        MessageBox.Show(details, title, MessageBoxButton.OK, MessageBoxImage.Error);
     }
 }
