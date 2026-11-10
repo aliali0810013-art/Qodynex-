@@ -9,18 +9,17 @@ public sealed class App : Microsoft.Maui.Controls.Application
     {
         _settings = settings;
         _runtime = runtime;
-        MainPage = LoadingPage("تهيئة Qodynex...");
+        _settings.EnsureLocalDemoIdentity();
+
+        AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+
+        MainPage = LoadingPage("تهيئة Qodynex محلياً...");
         _ = InitializeAsync();
     }
 
     private async Task InitializeAsync()
     {
-        if (!_settings.HasIdentity)
-        {
-            await MainThread.InvokeOnMainThreadAsync(() => MainPage = new NavigationPage(new SetupPage(_settings, _runtime)));
-            return;
-        }
-
         try
         {
             await _runtime.InitializeAsync().ConfigureAwait(false);
@@ -33,8 +32,50 @@ public sealed class App : Microsoft.Maui.Controls.Application
         catch (Exception ex)
         {
             await MainThread.InvokeOnMainThreadAsync(() =>
-                MainPage = new NavigationPage(new SetupPage(_settings, _runtime, ex.Message)));
+                MainPage = new NavigationPage(ErrorPage(ex)));
         }
+    }
+
+    private void OnUnhandledException(object? sender, UnhandledExceptionEventArgs args)
+    {
+        var error = args.ExceptionObject as Exception
+                    ?? new Exception(args.ExceptionObject?.ToString() ?? "Unknown fatal error.");
+        MainThread.BeginInvokeOnMainThread(() => MainPage = new NavigationPage(ErrorPage(error)));
+    }
+
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs args)
+    {
+        args.SetObserved();
+        MainThread.BeginInvokeOnMainThread(() => MainPage = new NavigationPage(ErrorPage(args.Exception)));
+    }
+
+    private ContentPage ErrorPage(Exception error)
+    {
+        var details = error.InnerException is null
+            ? error.Message
+            : $"{error.Message}\n\nالسبب: {error.InnerException.Message}";
+        var setup = MobileUi.PrimaryButton("فتح إعدادات ربط الخادم");
+        var page = new ContentPage
+        {
+            Title = "خطأ في التشغيل",
+            FlowDirection = FlowDirection.RightToLeft
+        };
+        setup.Clicked += (_, _) => page.Navigation.PushAsync(new SetupPage(_settings, _runtime, details));
+        page.Content = new ScrollView
+        {
+            Content = new VerticalStackLayout
+            {
+                Padding = new Thickness(20, 36),
+                Spacing = 16,
+                Children =
+                {
+                    MobileUi.Heading("تعذر تشغيل Qodynex"),
+                    new Label { Text = details, FontSize = 15 },
+                    setup
+                }
+            }
+        };
+        return page;
     }
 
     private static ContentPage LoadingPage(string text) => new()
