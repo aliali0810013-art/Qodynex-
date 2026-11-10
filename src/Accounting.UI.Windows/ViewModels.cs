@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Net.NetworkInformation;
 using Accounting.Application;
+using Accounting.Domain;
 using Accounting.Modules;
 using Accounting.Sync.Client;
 

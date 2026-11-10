@@ -177,6 +177,10 @@ internal sealed class ServerTenantHarness : IAsyncDisposable
                 new ServerItemRegistration(ServiceItemId, "SVC", "Service Item", null, UnitId, ItemKind.Service,
                     Guid.Empty, ServiceRevenueAccountId, ServiceCostAccountId, true)
             },
+            new[]
+            {
+                new ServerItemUnitConversionRegistration(CartonConversionId, StockItemId, CartonUnitId, 24m)
+            },
             new[] { new ServerWarehouseRegistration(WarehouseId, "WH", "Main Warehouse", null) }));
     }
 
