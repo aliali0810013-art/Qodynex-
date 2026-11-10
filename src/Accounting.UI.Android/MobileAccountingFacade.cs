@@ -1,3 +1,4 @@
+using System.Data;
 using Accounting.Application;
 using Accounting.Domain;
 using Accounting.Infrastructure.Local;
@@ -7,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Accounting.UI.Android;
 
 public sealed record MobileItem(Guid Id, string Sku, string Name, string? Barcode, Guid UnitOfMeasureId, ItemKind ItemKind);
+public sealed record MobileUnitOption(Guid UnitOfMeasureId, string Code, string Name, decimal BaseUnitsPerUnit);
 public sealed record MobilePartner(Guid Id, string Code, string Name, Guid ControlAccountId, decimal CreditLimit);
 public sealed record MobileAccount(Guid Id, string Code, string Name);
 public sealed record MobileWarehouse(Guid Id, string Code, string Name);
@@ -62,6 +64,34 @@ public sealed class MobileAccountingFacade
             .Select(x => new MobileWarehouse(x.Id, x.Code, x.Name))
             .ToListAsync(ct);
 
+    public async Task<IReadOnlyList<MobileUnitOption>> GetItemUnitsAsync(Guid itemId, CancellationToken ct = default)
+    {
+        var item = await _db.Items.AsNoTracking()
+            .SingleAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.Id == itemId, ct)
+            .ConfigureAwait(false);
+        var baseUnit = await _db.UnitOfMeasures.AsNoTracking()
+            .SingleAsync(x => x.Id == item.BaseUnitOfMeasureId, ct)
+            .ConfigureAwait(false);
+        var result = new List<MobileUnitOption>
+        {
+            new(baseUnit.Id, baseUnit.Code, baseUnit.Name, 1m)
+        };
+        var conversions = await (from conversion in _db.ItemUnitConversions.AsNoTracking()
+                                 join unit in _db.UnitOfMeasures.AsNoTracking() on conversion.UnitOfMeasureId equals unit.Id
+                                 where conversion.CompanyId == _user.CompanyId
+                                       && conversion.BranchId == _user.BranchId
+                                       && conversion.ItemId == itemId
+                                       && conversion.UnitOfMeasureId != item.BaseUnitOfMeasureId
+                                 orderby conversion.BaseUnitsPerUnit
+                                 select new MobileUnitOption(unit.Id, unit.Code, unit.Name, conversion.BaseUnitsPerUnit))
+            .ToListAsync(ct).ConfigureAwait(false);
+        result.AddRange(conversions);
+        return result;
+    }
+
+    public async Task<CompanyPolicy> GetPolicyAsync(CancellationToken ct = default) =>
+        (await _db.Companies.AsNoTracking().SingleAsync(x => x.Id == _user.CompanyId, ct).ConfigureAwait(false)).GetPolicy();
+
     public async Task<decimal> GetSuggestedUnitPriceAsync(string moduleKey, Guid itemId, decimal baseQuantity, decimal fallback, CancellationToken ct = default)
     {
         if (!string.Equals(moduleKey, Accounting.Modules.WholesaleModule.ModuleKey, StringComparison.OrdinalIgnoreCase)) return fallback;
@@ -76,30 +106,54 @@ public sealed class MobileAccountingFacade
         Guid settlementAccountId, Guid? partnerId, IReadOnlyList<MobileSaleLine> lines, CancellationToken ct = default)
     {
         if (lines.Count == 0) throw new InvalidOperationException("الفاتورة لا تحتوي أصنافاً.");
-        var number = await _numbers.NextAsync(_user, nameof(SalesInvoice), ct).ConfigureAwait(false);
-        var invoice = new SalesInvoice(_user.CompanyId, _user.BranchId, number, moduleKey, DateTimeOffset.UtcNow,
-            warehouseId, settlementAccountId, partnerId);
-        invoice.SetModuleMetadata(moduleMetadataJson);
-        foreach (var line in lines)
-            invoice.AddLine(line.ItemId, line.UnitOfMeasureId, line.Quantity, line.BaseUnitsPerUnit, line.UnitPrice);
-        _db.SalesInvoices.Add(invoice);
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-        return await _posting.PostSalesInvoiceAsync(new PostSalesInvoiceCommand(invoice.Id,
-            new PostingCommandContext(_user, UuidV7.NewGuid(), $"mobile-sale:{invoice.Id:N}")), ct).ConfigureAwait(false);
+        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct).ConfigureAwait(false);
+        try
+        {
+            var number = await _numbers.NextAsync(_user, nameof(SalesInvoice), ct).ConfigureAwait(false);
+            var invoice = new SalesInvoice(_user.CompanyId, _user.BranchId, number, moduleKey, DateTimeOffset.UtcNow,
+                warehouseId, settlementAccountId, partnerId);
+            invoice.SetModuleMetadata(moduleMetadataJson);
+            foreach (var line in lines)
+                invoice.AddLine(line.ItemId, line.UnitOfMeasureId, line.Quantity, line.BaseUnitsPerUnit, line.UnitPrice);
+            _db.SalesInvoices.Add(invoice);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            var result = await _posting.PostSalesInvoiceAsync(new PostSalesInvoiceCommand(invoice.Id,
+                new PostingCommandContext(_user, UuidV7.NewGuid(), $"mobile-sale:{invoice.Id:N}")), ct).ConfigureAwait(false);
+            await tx.CommitAsync(ct).ConfigureAwait(false);
+            return result;
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            _db.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     public async Task<PostingResult> CollectAsync(Guid customerId, Guid cashAccountId, decimal amount, string description, CancellationToken ct = default)
     {
-        var partner = await _db.BusinessPartners.AsNoTracking()
-            .SingleAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.Id == customerId, ct)
-            .ConfigureAwait(false);
-        var number = await _numbers.NextAsync(_user, nameof(ReceiptVoucher), ct).ConfigureAwait(false);
-        var voucher = new ReceiptVoucher(_user.CompanyId, _user.BranchId, number, "CORE", DateTimeOffset.UtcNow,
-            cashAccountId, partner.ControlAccountId, amount, description, customerId);
-        _db.ReceiptVouchers.Add(voucher);
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-        return await _posting.PostReceiptVoucherAsync(new PostReceiptVoucherCommand(voucher.Id,
-            new PostingCommandContext(_user, UuidV7.NewGuid(), $"mobile-receipt:{voucher.Id:N}")), ct).ConfigureAwait(false);
+        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct).ConfigureAwait(false);
+        try
+        {
+            var partner = await _db.BusinessPartners.AsNoTracking()
+                .SingleAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.Id == customerId, ct)
+                .ConfigureAwait(false);
+            var number = await _numbers.NextAsync(_user, nameof(ReceiptVoucher), ct).ConfigureAwait(false);
+            var voucher = new ReceiptVoucher(_user.CompanyId, _user.BranchId, number, "CORE", DateTimeOffset.UtcNow,
+                cashAccountId, partner.ControlAccountId, amount, description, customerId);
+            _db.ReceiptVouchers.Add(voucher);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            var result = await _posting.PostReceiptVoucherAsync(new PostReceiptVoucherCommand(voucher.Id,
+                new PostingCommandContext(_user, UuidV7.NewGuid(), $"mobile-receipt:{voucher.Id:N}")), ct).ConfigureAwait(false);
+            await tx.CommitAsync(ct).ConfigureAwait(false);
+            return result;
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            _db.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     public async Task<(decimal Balance, IReadOnlyList<MobileStatementRow> Rows)> GetCustomerStatementAsync(Guid customerId, CancellationToken ct = default)

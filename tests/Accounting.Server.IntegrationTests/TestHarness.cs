@@ -1,3 +1,4 @@
+using System.Data;
 using System.Net.Http;
 using Accounting.Application;
 using Accounting.Domain;
@@ -92,6 +93,8 @@ internal sealed class ServerTenantHarness : IAsyncDisposable
     public Guid ServiceRevenueAccountId { get; } = Guid.NewGuid();
     public Guid ServiceCostAccountId { get; } = Guid.NewGuid();
     public Guid UnitId { get; } = Guid.NewGuid();
+    public Guid CartonUnitId { get; } = Guid.NewGuid();
+    public Guid CartonConversionId { get; } = Guid.NewGuid();
     public Guid WarehouseId { get; } = Guid.NewGuid();
     public Guid StockItemId { get; } = Guid.NewGuid();
     public Guid ServiceItemId { get; } = Guid.NewGuid();
@@ -157,7 +160,11 @@ internal sealed class ServerTenantHarness : IAsyncDisposable
                 new ServerAccountRegistration(ServiceRevenueAccountId, "4200", "Service Revenue", null, AccountType.Revenue, NormalBalance.Credit, true, true),
                 new ServerAccountRegistration(ServiceCostAccountId, "5200", "Service Cost", null, AccountType.Expense, NormalBalance.Debit, true, true)
             },
-            new[] { new ServerUnitRegistration(UnitId, "EA", "Each") },
+            new[]
+            {
+                new ServerUnitRegistration(UnitId, "EA", "Each"),
+                new ServerUnitRegistration(CartonUnitId, "CTN", "Carton")
+            },
             new[]
             {
                 new ServerBusinessPartnerRegistration(CustomerId, "C001", "Customer", PartnerType.Customer,
@@ -270,43 +277,76 @@ internal sealed class LocalDeviceHarness : IAsyncDisposable
     public async Task<PurchaseInvoice> PostPurchaseAsync(Guid itemId, Guid unitId, Guid warehouseId, Guid cashAccountId,
         decimal quantity, decimal unitPrice, string key)
     {
-        var number = await Numbers.NextAsync(User, nameof(PurchaseInvoice));
-        var invoice = new PurchaseInvoice(User.CompanyId, User.BranchId, number, RetailModule.ModuleKey,
-            DateTimeOffset.UtcNow, warehouseId, cashAccountId);
-        invoice.AddLine(itemId, unitId, quantity, 1m, unitPrice);
-        Db.PurchaseInvoices.Add(invoice);
-        await Db.SaveChangesAsync();
-        await Posting.PostPurchaseInvoiceAsync(new PostPurchaseInvoiceCommand(invoice.Id,
-            new PostingCommandContext(User, UuidV7.NewGuid(), key)));
-        return invoice;
+        await using var tx = await Db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+        try
+        {
+            var number = await Numbers.NextAsync(User, nameof(PurchaseInvoice));
+            var invoice = new PurchaseInvoice(User.CompanyId, User.BranchId, number, RetailModule.ModuleKey,
+                DateTimeOffset.UtcNow, warehouseId, cashAccountId);
+            invoice.AddLine(itemId, unitId, quantity, 1m, unitPrice);
+            Db.PurchaseInvoices.Add(invoice);
+            await Db.SaveChangesAsync();
+            await Posting.PostPurchaseInvoiceAsync(new PostPurchaseInvoiceCommand(invoice.Id,
+                new PostingCommandContext(User, UuidV7.NewGuid(), key)));
+            await tx.CommitAsync();
+            return invoice;
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            Db.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     public async Task<SalesInvoice> PostSaleAsync(Guid itemId, Guid unitId, Guid warehouseId, Guid settlementAccountId,
         Guid? partnerId, decimal quantity, decimal unitPrice, string moduleKey, string key, string metadata = "{}")
     {
-        var number = await Numbers.NextAsync(User, nameof(SalesInvoice));
-        var invoice = new SalesInvoice(User.CompanyId, User.BranchId, number, moduleKey,
-            DateTimeOffset.UtcNow, warehouseId, settlementAccountId, partnerId);
-        invoice.SetModuleMetadata(metadata);
-        invoice.AddLine(itemId, unitId, quantity, 1m, unitPrice);
-        Db.SalesInvoices.Add(invoice);
-        await Db.SaveChangesAsync();
-        await Posting.PostSalesInvoiceAsync(new PostSalesInvoiceCommand(invoice.Id,
-            new PostingCommandContext(User, UuidV7.NewGuid(), key)));
-        return invoice;
+        await using var tx = await Db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+        try
+        {
+            var number = await Numbers.NextAsync(User, nameof(SalesInvoice));
+            var invoice = new SalesInvoice(User.CompanyId, User.BranchId, number, moduleKey,
+                DateTimeOffset.UtcNow, warehouseId, settlementAccountId, partnerId);
+            invoice.SetModuleMetadata(metadata);
+            invoice.AddLine(itemId, unitId, quantity, 1m, unitPrice);
+            Db.SalesInvoices.Add(invoice);
+            await Db.SaveChangesAsync();
+            await Posting.PostSalesInvoiceAsync(new PostSalesInvoiceCommand(invoice.Id,
+                new PostingCommandContext(User, UuidV7.NewGuid(), key)));
+            await tx.CommitAsync();
+            return invoice;
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            Db.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     public async Task<ReceiptVoucher> PostReceiptAsync(Guid customerId, Guid cashAccountId, Guid receivableAccountId,
         decimal amount, string key)
     {
-        var number = await Numbers.NextAsync(User, nameof(ReceiptVoucher));
-        var voucher = new ReceiptVoucher(User.CompanyId, User.BranchId, number, "CORE", DateTimeOffset.UtcNow,
-            cashAccountId, receivableAccountId, amount, "Collection", customerId);
-        Db.ReceiptVouchers.Add(voucher);
-        await Db.SaveChangesAsync();
-        await Posting.PostReceiptVoucherAsync(new PostReceiptVoucherCommand(voucher.Id,
-            new PostingCommandContext(User, UuidV7.NewGuid(), key)));
-        return voucher;
+        await using var tx = await Db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+        try
+        {
+            var number = await Numbers.NextAsync(User, nameof(ReceiptVoucher));
+            var voucher = new ReceiptVoucher(User.CompanyId, User.BranchId, number, "CORE", DateTimeOffset.UtcNow,
+                cashAccountId, receivableAccountId, amount, "Collection", customerId);
+            Db.ReceiptVouchers.Add(voucher);
+            await Db.SaveChangesAsync();
+            await Posting.PostReceiptVoucherAsync(new PostReceiptVoucherCommand(voucher.Id,
+                new PostingCommandContext(User, UuidV7.NewGuid(), key)));
+            await tx.CommitAsync();
+            return voucher;
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            Db.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     public async Task<SyncPushBatch> PendingBatchAsync()

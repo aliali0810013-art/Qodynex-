@@ -104,7 +104,7 @@ public sealed class SyncPushCommandHandler
 
     private async Task<SyncAck> ProcessMessageOnceAsync(SyncEnvelope envelope, CancellationToken cancellationToken)
     {
-        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
         await _session.ApplyAsync(cancellationToken).ConfigureAwait(false);
         await DemandActiveDeviceAsync(cancellationToken).ConfigureAwait(false);
         await AcquireIdempotencyLockAsync(envelope, cancellationToken).ConfigureAwait(false);
@@ -417,6 +417,32 @@ public sealed class SyncPushCommandHandler
         var itemIds = payload.Document.Lines.Select(x => x.ItemId).Distinct().ToArray();
         var items = await _db.Items.Where(x => itemIds.Contains(x.Id)).ToListAsync(cancellationToken).ConfigureAwait(false);
         if (items.Count != itemIds.Length) throw new AccountingDomainException("One or more invoice items do not exist on the server.");
+
+        var conversions = await _db.ItemUnitConversions.AsNoTracking()
+            .Where(x => itemIds.Contains(x.ItemId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        foreach (var line in payload.Document.Lines)
+        {
+            var item = items.Single(x => x.Id == line.ItemId);
+            decimal expectedFactor;
+            if (line.UnitOfMeasureId == item.BaseUnitOfMeasureId)
+                expectedFactor = 1m;
+            else
+            {
+                var conversion = conversions.SingleOrDefault(x =>
+                    x.ItemId == line.ItemId && x.UnitOfMeasureId == line.UnitOfMeasureId);
+                if (conversion is null)
+                    throw new AccountingDomainException(
+                        $"Unit {line.UnitOfMeasureId} is not configured for item {line.ItemId}.");
+                expectedFactor = conversion.BaseUnitsPerUnit;
+            }
+
+            if (_currency.RoundQuantity(line.BaseUnitsPerUnit, policy)
+                != _currency.RoundQuantity(expectedFactor, policy))
+                throw new AccountingDomainException(
+                    $"Unit conversion factor for item {line.ItemId} and unit {line.UnitOfMeasureId} does not match authoritative master data.");
+        }
 
         var moduleKey = payload.Document.ModuleKey.Trim().ToUpperInvariant();
         if (moduleKey == "SERVICES" && items.Any(x => x.ItemKind != ItemKind.Service))
@@ -1045,7 +1071,7 @@ public sealed class DeviceRegistrationService
         if (!_tenant.RoleClaims.Contains("tenant.admin"))
             throw new UnauthorizedAccessException("tenant.admin permission is required to change device state.");
 
-        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+        await using var tx = await _db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
         await _session.ApplyAsync(cancellationToken).ConfigureAwait(false);
         var device = await _db.DeviceRegistrations.SingleOrDefaultAsync(
             x => x.DeviceId == deviceId,

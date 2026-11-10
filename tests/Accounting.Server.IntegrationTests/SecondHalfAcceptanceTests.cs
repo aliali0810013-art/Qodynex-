@@ -33,6 +33,8 @@ public sealed class SecondHalfAcceptanceTests
 
         string? firstSalesNumber = null;
         string? firstReceiptNumber = null;
+        DateTimeOffset? firstSalesTimestamp = null;
+        DateTimeOffset? firstReceiptTimestamp = null;
         for (var i = 0; i < 100; i++)
         {
             var result = await server.Push.HandleAsync(repeatedBatch);
@@ -43,8 +45,12 @@ public sealed class SecondHalfAcceptanceTests
             var receiptAck = result.Acknowledgements.Single(x => x.DocumentId == receipt.Id);
             firstSalesNumber ??= salesAck.OfficialSequenceNumber;
             firstReceiptNumber ??= receiptAck.OfficialSequenceNumber;
+            firstSalesTimestamp ??= salesAck.ServerTimestampUtc;
+            firstReceiptTimestamp ??= receiptAck.ServerTimestampUtc;
             Assert.Equal(firstSalesNumber, salesAck.OfficialSequenceNumber);
             Assert.Equal(firstReceiptNumber, receiptAck.OfficialSequenceNumber);
+            Assert.Equal(firstSalesTimestamp, salesAck.ServerTimestampUtc);
+            Assert.Equal(firstReceiptTimestamp, receiptAck.ServerTimestampUtc);
         }
 
         await using var tx = await server.Db.Database.BeginTransactionAsync();
@@ -140,6 +146,10 @@ public sealed class SecondHalfAcceptanceTests
         await windowsServer.RegisterAsync();
         var windowsBootstrap = await windowsServer.GetBootstrapAsync();
         await using var windows = await LocalDeviceHarness.CreateAsync(windowsBootstrap, windowsServer.UserId, windowsServer.DeviceId);
+        Assert.True(await windows.Db.ItemUnitConversions.AsNoTracking().AnyAsync(x =>
+            x.ItemId == androidServer.StockItemId
+            && x.UnitOfMeasureId == androidServer.CartonUnitId
+            && x.BaseUnitsPerUnit == 24m));
         var windowsCoordinator = new BackgroundSyncCoordinator(windowsServer.Transport(), windows.SyncStore,
             new AlwaysOnlineNetwork(), windows.User, windowsServer.Clock);
 
@@ -150,6 +160,58 @@ public sealed class SecondHalfAcceptanceTests
         Assert.True(await windows.Db.OfficialSequenceAssignments.AsNoTracking().AnyAsync(x => x.DocumentId == offlineSale.Id));
         Assert.True(await windows.Db.OfficialSequenceAssignments.AsNoTracking().AnyAsync(x => x.DocumentId == offlineReceipt.Id));
         Assert.Equal(0, await windows.Db.OutboxMessages.CountAsync());
+    }
+
+    [Fact]
+    public async Task Offline_Stock_Conflict_Is_NonDestructive_And_Requires_Resolution()
+    {
+        var database = await PostgresTestDatabase.ResetAsync();
+        await using var serverA = database.CreateTenant();
+        await serverA.ConfigureDefaultAsync(allowNegativeStock: false);
+        await serverA.RegisterAsync();
+        var bootstrapA = await serverA.GetBootstrapAsync();
+        await using var deviceA = await LocalDeviceHarness.CreateAsync(bootstrapA, serverA.UserId, serverA.DeviceId);
+        var coordinatorA = new BackgroundSyncCoordinator(serverA.Transport(), deviceA.SyncStore,
+            new AlwaysOnlineNetwork(), deviceA.User, serverA.Clock);
+
+        await deviceA.PostPurchaseAsync(serverA.StockItemId, serverA.UnitId, serverA.WarehouseId,
+            serverA.CashAccountId, 1m, 100m, "conflict-seed");
+        await coordinatorA.RunOnceAsync();
+        serverA.Clock.AdvanceSeconds();
+
+        var deviceBId = Guid.NewGuid();
+        await using var serverB = serverA.CreateAdditionalDevice(deviceBId);
+        await serverB.RegisterAsync();
+        var bootstrapB = await serverB.GetBootstrapAsync();
+        await using var deviceB = await LocalDeviceHarness.CreateAsync(bootstrapB, serverB.UserId, serverB.DeviceId);
+        var coordinatorB = new BackgroundSyncCoordinator(serverB.Transport(), deviceB.SyncStore,
+            new AlwaysOnlineNetwork(), deviceB.User, serverB.Clock);
+        await coordinatorB.RunOnceAsync();
+
+        var saleA = await deviceA.PostSaleAsync(serverA.StockItemId, serverA.UnitId, serverA.WarehouseId,
+            serverA.CashAccountId, null, 1m, 200m, RetailModule.ModuleKey, "device-a-last-unit");
+        var saleB = await deviceB.PostSaleAsync(serverA.StockItemId, serverA.UnitId, serverA.WarehouseId,
+            serverA.CashAccountId, null, 1m, 210m, RetailModule.ModuleKey, "device-b-last-unit");
+
+        await coordinatorB.RunOnceAsync();
+        serverA.Clock.AdvanceSeconds();
+        await coordinatorA.RunOnceAsync();
+
+        Assert.True(await deviceA.Db.SalesInvoices.AsNoTracking()
+            .AnyAsync(x => x.Id == saleA.Id && x.Status == PostingStatus.Posted));
+        Assert.Equal(OutboxStatus.Conflict, await deviceA.Db.OutboxMessages
+            .Where(x => x.OperationId == saleA.PostingOperationId)
+            .Select(x => x.Status)
+            .SingleAsync());
+        Assert.Equal(1, await deviceA.Db.LocalSyncConflicts.CountAsync(x => x.OperationId == saleA.PostingOperationId));
+        Assert.True(await deviceB.Db.OfficialSequenceAssignments.AnyAsync(x => x.DocumentId == saleB.Id));
+
+        await using var tx = await serverA.Db.Database.BeginTransactionAsync();
+        await serverA.Session.ApplyAsync();
+        Assert.False(await serverA.Db.FinancialDocuments.AnyAsync(x => x.Id == saleA.Id));
+        Assert.True(await serverA.Db.FinancialDocuments.AnyAsync(x => x.Id == saleB.Id));
+        Assert.Equal(1, await serverA.Db.SyncConflicts.CountAsync(x => x.OperationId == saleA.PostingOperationId));
+        await tx.CommitAsync();
     }
 
     [Fact]
@@ -187,7 +249,9 @@ public sealed class SecondHalfAcceptanceTests
                 wholesaleServer.ReceivableAccountId, wholesaleServer.CustomerId, 2m, 100m,
                 WholesaleModule.ModuleKey, "wholesale-over-limit"));
         Assert.Contains("credit limit", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, await wholesale.Db.SalesInvoices.CountAsync());
         Assert.Equal(0, await wholesale.Db.JournalEntries.CountAsync(x => x.SourceDocumentType == nameof(SalesInvoice)));
+        Assert.Equal(0, await wholesale.Db.OutboxMessages.CountAsync());
     }
 
     [Fact]
@@ -201,15 +265,27 @@ public sealed class SecondHalfAcceptanceTests
         var clock = new MutableClock(new DateTimeOffset(2026, 11, 10, 2, 0, 0, TimeSpan.Zero));
         var roles = new[] { "tenant.admin", "accounting.post" };
 
-        // Production service owns all retries; the test supplies no retry loop.
+        // A rolled-back allocation must not consume the official number.
+        await using (var rolledBackTenant = database.CreateTenant(companyId, branchId, userId, deviceId, roles, clock))
+        {
+            await using var rolledBackTransaction = await rolledBackTenant.Db.Database
+                .BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
+            await rolledBackTenant.Session.ApplyAsync();
+            var rolledBackNumber = await new OfficialSequenceGenerator(rolledBackTenant.Db)
+                .NextAsync(companyId, branchId, nameof(SalesInvoice), clock.UtcNow);
+            Assert.Equal(1, rolledBackNumber.Sequence);
+            await rolledBackTransaction.RollbackAsync();
+        }
+
+        // Production service owns transient 40001/40P01 retries; the test has no retry loop.
         var tasks = Enumerable.Range(0, 20).Select(async _ =>
         {
             await using var tenant = database.CreateTenant(companyId, branchId, userId, deviceId, roles, clock);
             return await new OfficialSequenceGenerator(tenant.Db)
                 .NextInTransactionAsync(companyId, branchId, nameof(SalesInvoice), clock.UtcNow, tenant.Session);
         }).ToArray();
-        var results = await Task.WhenAll(tasks);
 
+        var results = await Task.WhenAll(tasks);
         Assert.Equal(20, results.Select(x => x.Sequence).Distinct().Count());
         Assert.Equal(20, results.Select(x => x.Number).Distinct(StringComparer.Ordinal).Count());
         Assert.Equal(Enumerable.Range(1, 20).Select(x => (long)x), results.Select(x => x.Sequence).OrderBy(x => x));

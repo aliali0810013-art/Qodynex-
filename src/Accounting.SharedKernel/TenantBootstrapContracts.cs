@@ -18,6 +18,7 @@ public sealed record TenantBootstrapResult(
     IReadOnlyList<UnitMasterSyncRecord> Units,
     IReadOnlyList<BusinessPartnerMasterSyncRecord> Partners,
     IReadOnlyList<ItemMasterSyncRecord> Items,
+    IReadOnlyList<ItemUnitConversionSyncRecord> ItemUnitConversions,
     IReadOnlyList<WarehouseMasterSyncRecord> Warehouses,
     IReadOnlyList<string> EnabledModules,
     IReadOnlyList<ModuleConfigurationSyncRecord> ModuleConfigurations,
@@ -73,6 +74,12 @@ public sealed record ItemMasterSyncRecord(
     Guid CogsAccountId,
     int ItemKind,
     bool IsActive);
+
+public sealed record ItemUnitConversionSyncRecord(
+    Guid Id,
+    Guid ItemId,
+    Guid UnitOfMeasureId,
+    decimal BaseUnitsPerUnit);
 
 public sealed record WarehouseMasterSyncRecord(
     Guid Id,

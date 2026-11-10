@@ -51,7 +51,17 @@
             <DataGridTextColumn Header="الكود" Binding="{Binding Sku}" IsReadOnly="True" Width="130"/>
             <DataGridTextColumn Header="الصنف" Binding="{Binding Name}" IsReadOnly="True" Width="*"/>
             <DataGridTextColumn Header="الكمية" Binding="{Binding Quantity, UpdateSourceTrigger=PropertyChanged}" Width="100"/>
-            <DataGridTextColumn Header="معامل الوحدة" Binding="{Binding BaseUnitsPerUnit, UpdateSourceTrigger=PropertyChanged}" Width="110"/>
+            <DataGridTemplateColumn Header="الوحدة" Width="150">
+              <DataGridTemplateColumn.CellTemplate>
+                <DataTemplate>
+                  <ComboBox ItemsSource="{Binding UnitOptions}"
+                            SelectedItem="{Binding SelectedUnit, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            DisplayMemberPath="Name"
+                            MinHeight="26"/>
+                </DataTemplate>
+              </DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
+            <DataGridTextColumn Header="المعامل" Binding="{Binding BaseUnitsPerUnit}" IsReadOnly="True" Width="90"/>
             <DataGridTextColumn Header="السعر" Binding="{Binding UnitPrice, UpdateSourceTrigger=PropertyChanged}" Width="120"/>
             <DataGridTextColumn Header="الإجمالي" Binding="{Binding LineTotal}" IsReadOnly="True" Width="130"/>
           </DataGrid.Columns>

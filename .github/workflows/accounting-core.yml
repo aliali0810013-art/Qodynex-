@@ -2,7 +2,7 @@ name: accounting-platform
 
 on:
   push:
-    branches: [ main, accounting-core-50, ci-build-recovery-20261110 ]
+    branches: [ main, accounting-core-50, ci-build-recovery-20261110, qodynex-unified-integration ]
   pull_request:
     branches: [ main ]
 

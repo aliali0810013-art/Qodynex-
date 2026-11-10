@@ -83,6 +83,13 @@ public sealed class ServerItem : ServerTenantEntity
     public bool IsActive { get; set; } = true;
 }
 
+public sealed class ServerItemUnitConversion : ServerTenantEntity
+{
+    public Guid ItemId { get; set; }
+    public Guid UnitOfMeasureId { get; set; }
+    public decimal BaseUnitsPerUnit { get; set; }
+}
+
 public sealed class ServerWarehouse : ServerTenantEntity
 {
     public string Code { get; set; } = string.Empty;

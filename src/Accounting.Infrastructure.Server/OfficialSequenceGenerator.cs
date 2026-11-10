@@ -66,7 +66,7 @@ RETURNING "CurrentValue";
         PostgresTransactionalRetry.ExecuteAsync(_db, async ct =>
         {
             await using var transaction = await _db.Database.BeginTransactionAsync(
-                System.Data.IsolationLevel.Serializable, ct).ConfigureAwait(false);
+                System.Data.IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
             await session.ApplyAsync(ct).ConfigureAwait(false);
             var allocation = await NextAsync(companyId, branchId, documentType, date, ct).ConfigureAwait(false);
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);

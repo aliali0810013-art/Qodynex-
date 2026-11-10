@@ -226,16 +226,77 @@ public sealed class HomePage : ContentPage
 
 public sealed class MobileSaleLineViewModel : BindableObject
 {
+    private Guid _unitOfMeasureId;
+    private MobileUnitOption? _selectedUnit;
     private decimal _quantity = 1m;
+    private decimal _baseUnitsPerUnit = 1m;
     private decimal _unitPrice;
 
     public Guid ItemId { get; init; }
-    public Guid UnitOfMeasureId { get; init; }
     public string Sku { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
-    public decimal BaseUnitsPerUnit { get; init; } = 1m;
-    public decimal Quantity { get => _quantity; set { if (_quantity == value) return; _quantity = value; OnPropertyChanged(); OnPropertyChanged(nameof(Total)); } }
-    public decimal UnitPrice { get => _unitPrice; set { if (_unitPrice == value) return; _unitPrice = value; OnPropertyChanged(); OnPropertyChanged(nameof(Total)); } }
+    public ObservableCollection<MobileUnitOption> UnitOptions { get; } = new();
+
+    public Guid UnitOfMeasureId
+    {
+        get => _unitOfMeasureId;
+        private set
+        {
+            if (_unitOfMeasureId == value) return;
+            _unitOfMeasureId = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public MobileUnitOption? SelectedUnit
+    {
+        get => _selectedUnit;
+        set
+        {
+            if (Equals(_selectedUnit, value)) return;
+            _selectedUnit = value;
+            OnPropertyChanged();
+            if (value is null) return;
+            UnitOfMeasureId = value.UnitOfMeasureId;
+            BaseUnitsPerUnit = value.BaseUnitsPerUnit;
+        }
+    }
+
+    public decimal Quantity
+    {
+        get => _quantity;
+        set
+        {
+            if (value <= 0m || _quantity == value) return;
+            _quantity = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(Total));
+        }
+    }
+
+    public decimal BaseUnitsPerUnit
+    {
+        get => _baseUnitsPerUnit;
+        private set
+        {
+            if (value <= 0m || _baseUnitsPerUnit == value) return;
+            _baseUnitsPerUnit = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public decimal UnitPrice
+    {
+        get => _unitPrice;
+        set
+        {
+            if (value < 0m || _unitPrice == value) return;
+            _unitPrice = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(Total));
+        }
+    }
+
     public decimal Total => Quantity * UnitPrice;
 }
 
@@ -249,7 +310,9 @@ public sealed class SalePage : ContentPage
     private readonly Picker _settlement = new() { Title = "حساب الدفع/العميل" };
     private readonly Picker _partner = new() { Title = "العميل (اختياري)" };
     private readonly Picker _serviceType = new() { Title = "نوع خدمة المطعم" };
+    private readonly Label _tax = new() { FontSize = 15 };
     private readonly Label _total = new() { FontSize = 22, FontAttributes = FontAttributes.Bold };
+    private CompanyPolicy? _policy;
     private readonly Label _status = new() { TextColor = Colors.DarkSlateGray };
     private CancellationTokenSource? _hidDebounce;
 
@@ -283,13 +346,18 @@ public sealed class SalePage : ContentPage
                     ColumnDefinitions =
                     {
                         new ColumnDefinition(GridLength.Star),
-                        new ColumnDefinition(new GridLength(72)),
-                        new ColumnDefinition(new GridLength(100)),
+                        new ColumnDefinition(new GridLength(105)),
+                        new ColumnDefinition(new GridLength(68)),
+                        new ColumnDefinition(new GridLength(92)),
                         new ColumnDefinition(new GridLength(40))
                     }
                 };
                 var name = new Label { VerticalTextAlignment = TextAlignment.Center };
                 name.SetBinding(Label.TextProperty, nameof(MobileSaleLineViewModel.Name));
+                var unit = new Picker { HorizontalOptions = LayoutOptions.Fill };
+                unit.SetBinding(Picker.ItemsSourceProperty, nameof(MobileSaleLineViewModel.UnitOptions));
+                unit.SetBinding(Picker.SelectedItemProperty, nameof(MobileSaleLineViewModel.SelectedUnit), BindingMode.TwoWay);
+                unit.ItemDisplayBinding = new Binding(nameof(MobileUnitOption.Name));
                 var qty = new Entry { Keyboard = Keyboard.Numeric, HorizontalTextAlignment = TextAlignment.Center };
                 qty.SetBinding(Entry.TextProperty, nameof(MobileSaleLineViewModel.Quantity), BindingMode.TwoWay);
                 var price = new Entry { Keyboard = Keyboard.Numeric, HorizontalTextAlignment = TextAlignment.Center, Placeholder = "السعر" };
@@ -301,7 +369,7 @@ public sealed class SalePage : ContentPage
                     if (remove.CommandParameter is MobileSaleLineViewModel row) _lines.Remove(row);
                     Recalculate();
                 };
-                grid.Add(name, 0); grid.Add(qty, 1); grid.Add(price, 2); grid.Add(remove, 3);
+                grid.Add(name, 0); grid.Add(unit, 1); grid.Add(qty, 2); grid.Add(price, 3); grid.Add(remove, 4);
                 return grid;
             })
         };
@@ -339,9 +407,9 @@ public sealed class SalePage : ContentPage
                         _serviceType.Position(1,1)
                     }
                 }.Position(0,1),
-                new Label { Text = "الصنف    | الكمية | السعر", FontAttributes = FontAttributes.Bold }.Position(0,2),
+                new Label { Text = "الصنف | الوحدة | الكمية | السعر", FontAttributes = FontAttributes.Bold }.Position(0,2),
                 list.Position(0,3),
-                new VerticalStackLayout { Spacing = 6, Children = { _total, post, _status } }.Position(0,4)
+                new VerticalStackLayout { Spacing = 6, Children = { _tax, _total, post, _status } }.Position(0,4)
             }
         };
 
@@ -352,6 +420,7 @@ public sealed class SalePage : ContentPage
     private async Task LoadPickersAsync()
     {
         if (_settlement.ItemsSource is not null) return;
+        _policy = await _runtime.Facade.GetPolicyAsync().ConfigureAwait(true);
         var accounts = await _runtime.Facade.GetPostableAccountsAsync().ConfigureAwait(true);
         var partners = await _runtime.Facade.GetCustomersAsync().ConfigureAwait(true);
         var warehouses = await _runtime.Facade.GetWarehousesAsync().ConfigureAwait(true);
@@ -363,6 +432,7 @@ public sealed class SalePage : ContentPage
         _warehouse.ItemDisplayBinding = new Binding(nameof(MobileWarehouse.Name));
         if (accounts.Count > 0) _settlement.SelectedIndex = 0;
         if (warehouses.Count > 0) _warehouse.SelectedIndex = 0;
+        Recalculate();
     }
 
     private async void OnBarcodeTextChanged(object? sender, TextChangedEventArgs e)
@@ -396,16 +466,21 @@ public sealed class SalePage : ContentPage
             existing.Quantity += 1m;
         else
         {
-            var suggestedPrice = await _runtime.Facade.GetSuggestedUnitPriceAsync(_moduleKey, item.Id, 1m, 0m).ConfigureAwait(true);
+            var unitOptions = await _runtime.Facade.GetItemUnitsAsync(item.Id).ConfigureAwait(true);
+            if (unitOptions.Count == 0) throw new InvalidOperationException("لا توجد وحدة قياس معرفة للصنف.");
+            var defaultUnit = unitOptions[0];
+            var suggestedPrice = await _runtime.Facade.GetSuggestedUnitPriceAsync(
+                _moduleKey, item.Id, defaultUnit.BaseUnitsPerUnit, 0m).ConfigureAwait(true);
             var row = new MobileSaleLineViewModel
             {
                 ItemId = item.Id,
-                UnitOfMeasureId = item.UnitOfMeasureId,
                 Sku = item.Sku,
                 Name = item.Name,
                 Quantity = 1m,
                 UnitPrice = suggestedPrice
             };
+            foreach (var option in unitOptions) row.UnitOptions.Add(option);
+            row.SelectedUnit = defaultUnit;
             row.PropertyChanged += (_, args) =>
             {
                 if (args.PropertyName is nameof(MobileSaleLineViewModel.Quantity) or nameof(MobileSaleLineViewModel.UnitPrice) or nameof(MobileSaleLineViewModel.Total))
@@ -419,7 +494,40 @@ public sealed class SalePage : ContentPage
         Recalculate();
     }
 
-    private void Recalculate() => _total.Text = $"الإجمالي: {_lines.Sum(x => x.Total):N2}";
+    private void Recalculate()
+    {
+        var subtotal = _lines.Sum(x => x.Total);
+        if (_policy is null)
+        {
+            _tax.Text = "الضريبة: 0.00";
+            _total.Text = $"الإجمالي: {subtotal:N2}";
+            return;
+        }
+
+        var policy = _policy;
+        subtotal = decimal.Round(subtotal, policy.CurrencyScale, policy.RoundingMode);
+        decimal tax;
+        decimal total;
+        if (!policy.TaxPolicy.Enabled || policy.TaxPolicy.Rate == 0m)
+        {
+            tax = 0m;
+            total = subtotal;
+        }
+        else if (policy.TaxPolicy.PricesIncludeTax)
+        {
+            var net = decimal.Round(subtotal / (1m + policy.TaxPolicy.Rate), policy.CurrencyScale, policy.RoundingMode);
+            tax = decimal.Round(subtotal - net, policy.CurrencyScale, policy.RoundingMode);
+            total = subtotal;
+        }
+        else
+        {
+            tax = decimal.Round(subtotal * policy.TaxPolicy.Rate, policy.CurrencyScale, policy.RoundingMode);
+            total = decimal.Round(subtotal + tax, policy.CurrencyScale, policy.RoundingMode);
+        }
+
+        _tax.Text = $"الضريبة: {tax:N2}";
+        _total.Text = $"الإجمالي: {total:N2}";
+    }
 
     private async void PostAsync(object? sender, EventArgs e)
     {

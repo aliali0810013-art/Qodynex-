@@ -9,17 +9,64 @@ namespace Accounting.UI.Windows;
 
 public sealed class InvoiceLineViewModel : ObservableObject
 {
+    private Guid _unitOfMeasureId;
+    private ItemUnitOption? _selectedUnit;
     private decimal _quantity = 1m;
     private decimal _baseUnitsPerUnit = 1m;
     private decimal _unitPrice;
 
     public Guid ItemId { get; init; }
-    public Guid UnitOfMeasureId { get; init; }
     public string Sku { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
-    public decimal Quantity { get => _quantity; set { if (Set(ref _quantity, value)) Raise(nameof(LineTotal)); } }
-    public decimal BaseUnitsPerUnit { get => _baseUnitsPerUnit; set => Set(ref _baseUnitsPerUnit, value); }
-    public decimal UnitPrice { get => _unitPrice; set { if (Set(ref _unitPrice, value)) Raise(nameof(LineTotal)); } }
+    public ObservableCollection<ItemUnitOption> UnitOptions { get; } = new();
+
+    public Guid UnitOfMeasureId
+    {
+        get => _unitOfMeasureId;
+        private set => Set(ref _unitOfMeasureId, value);
+    }
+
+    public ItemUnitOption? SelectedUnit
+    {
+        get => _selectedUnit;
+        set
+        {
+            if (!Set(ref _selectedUnit, value) || value is null) return;
+            UnitOfMeasureId = value.UnitOfMeasureId;
+            BaseUnitsPerUnit = value.BaseUnitsPerUnit;
+        }
+    }
+
+    public decimal Quantity
+    {
+        get => _quantity;
+        set
+        {
+            if (value <= 0m) return;
+            if (Set(ref _quantity, value)) Raise(nameof(LineTotal));
+        }
+    }
+
+    public decimal BaseUnitsPerUnit
+    {
+        get => _baseUnitsPerUnit;
+        private set
+        {
+            if (value <= 0m) return;
+            Set(ref _baseUnitsPerUnit, value);
+        }
+    }
+
+    public decimal UnitPrice
+    {
+        get => _unitPrice;
+        set
+        {
+            if (value < 0m) return;
+            if (Set(ref _unitPrice, value)) Raise(nameof(LineTotal));
+        }
+    }
+
     public decimal LineTotal => Quantity * UnitPrice;
 }
 
@@ -35,6 +82,7 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
     private decimal _subtotal;
     private decimal _tax;
     private decimal _grandTotal;
+    private CompanyPolicy? _policy;
 
     public InvoiceEditorViewModel(WindowsAccountingFacade facade, Action<string, string, object> openTab, bool isSales, string moduleKey)
     {
@@ -49,6 +97,7 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
         DetailsCommand = new AsyncRelayCommand(OpenSelectedDetailsAsync);
         RemoveLineCommand = new RelayCommand(RemoveSelectedLine, () => SelectedLine is not null);
+        _ = LoadPolicyAsync();
     }
 
     public string Title => _isSales ? "فاتورة مبيعات" : "فاتورة مشتريات";
@@ -125,7 +174,7 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
 
     public async Task RefreshAsync()
     {
-        await RecalculateAsync().ConfigureAwait(true);
+        await LoadPolicyAsync().ConfigureAwait(true);
         Status = "تمت إعادة الحساب من سياسة الشركة.";
     }
 
@@ -160,7 +209,11 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
                 return;
             }
 
-            var suggestedPrice = await _facade.GetSuggestedUnitPriceAsync(ModuleKey, item.Id, 1m, 0m, cancellationToken).ConfigureAwait(false);
+            var unitOptions = await _facade.GetItemUnitsAsync(item.Id, cancellationToken).ConfigureAwait(false);
+            if (unitOptions.Count == 0) throw new InvalidOperationException("No unit of measure is configured for the selected item.");
+            var defaultUnit = unitOptions[0];
+            var suggestedPrice = await _facade.GetSuggestedUnitPriceAsync(
+                ModuleKey, item.Id, defaultUnit.BaseUnitsPerUnit, 0m, cancellationToken).ConfigureAwait(false);
             await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 var existing = Lines.FirstOrDefault(x => x.ItemId == item.Id);
@@ -171,13 +224,13 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
                     var line = new InvoiceLineViewModel
                     {
                         ItemId = item.Id,
-                        UnitOfMeasureId = item.BaseUnitOfMeasureId,
                         Sku = item.Sku,
                         Name = item.Name,
                         Quantity = 1m,
-                        BaseUnitsPerUnit = 1m,
                         UnitPrice = suggestedPrice
                     };
+                    foreach (var option in unitOptions) line.UnitOptions.Add(option);
+                    line.SelectedUnit = defaultUnit;
                     line.PropertyChanged += OnLineChanged;
                     Lines.Add(line);
                     SelectedLine = line;
@@ -197,26 +250,45 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
 
     private void OnLineChanged(object? sender, PropertyChangedEventArgs e) => Recalculate();
 
-    private async Task RecalculateAsync()
+    private async Task LoadPolicyAsync()
     {
-        var policy = await _facade.GetPolicyAsync().ConfigureAwait(true);
-        var subtotal = Lines.Sum(x => x.LineTotal);
-        Subtotal = decimal.Round(subtotal, policy.CurrencyScale, policy.RoundingMode);
-        if (!policy.TaxPolicy.Enabled || policy.TaxPolicy.Rate == 0m) Tax = 0m;
-        else if (policy.TaxPolicy.PricesIncludeTax)
+        try
         {
-            var net = decimal.Round(Subtotal / (1m + policy.TaxPolicy.Rate), policy.CurrencyScale, policy.RoundingMode);
-            Tax = Subtotal - net;
+            _policy = await _facade.GetPolicyAsync().ConfigureAwait(true);
+            Recalculate();
         }
-        else
-            Tax = decimal.Round(Subtotal * policy.TaxPolicy.Rate, policy.CurrencyScale, policy.RoundingMode);
-        GrandTotal = policy.TaxPolicy.PricesIncludeTax ? Subtotal : Subtotal + Tax;
+        catch (Exception ex)
+        {
+            Status = ex.Message;
+        }
     }
 
     private void Recalculate()
     {
-        Subtotal = Lines.Sum(x => x.LineTotal);
-        GrandTotal = Subtotal + Tax;
+        var subtotal = Lines.Sum(x => x.LineTotal);
+        if (_policy is null)
+        {
+            Subtotal = subtotal;
+            Tax = 0m;
+            GrandTotal = subtotal;
+            return;
+        }
+
+        var policy = _policy;
+        Subtotal = decimal.Round(subtotal, policy.CurrencyScale, policy.RoundingMode);
+        if (!policy.TaxPolicy.Enabled || policy.TaxPolicy.Rate == 0m)
+            Tax = 0m;
+        else if (policy.TaxPolicy.PricesIncludeTax)
+        {
+            var net = decimal.Round(Subtotal / (1m + policy.TaxPolicy.Rate), policy.CurrencyScale, policy.RoundingMode);
+            Tax = decimal.Round(Subtotal - net, policy.CurrencyScale, policy.RoundingMode);
+        }
+        else
+            Tax = decimal.Round(Subtotal * policy.TaxPolicy.Rate, policy.CurrencyScale, policy.RoundingMode);
+
+        GrandTotal = policy.TaxPolicy.PricesIncludeTax
+            ? Subtotal
+            : decimal.Round(Subtotal + Tax, policy.CurrencyScale, policy.RoundingMode);
     }
 
     private void RemoveSelectedLine()
