@@ -38,6 +38,7 @@ jobs:
         run: |
           dotnet restore tests/Accounting.Domain.Tests/Accounting.Domain.Tests.csproj
           dotnet restore tests/Accounting.Integration.LocalTests/Accounting.Integration.LocalTests.csproj
+          dotnet restore tests/Accounting.UI.Android.ColdStartTests/Accounting.UI.Android.ColdStartTests.csproj
           dotnet restore tests/Accounting.Server.IntegrationTests/Accounting.Server.IntegrationTests.csproj
           dotnet restore src/Accounting.Server.Api/Accounting.Server.Api.csproj
       - name: Build server
@@ -46,6 +47,8 @@ jobs:
         run: dotnet test tests/Accounting.Domain.Tests/Accounting.Domain.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=domain.trx"
       - name: Local SQLite integration tests
         run: dotnet test tests/Accounting.Integration.LocalTests/Accounting.Integration.LocalTests.csproj --configuration Release --no-restore --logger "trx;LogFileName=local.trx"
+      - name: Android cold-start offline bootstrap test
+        run: dotnet test tests/Accounting.UI.Android.ColdStartTests/Accounting.UI.Android.ColdStartTests.csproj --configuration Release --no-restore --logger "trx;LogFileName=android-cold-start.trx"
       - name: PostgreSQL and sync integration tests
         run: dotnet test tests/Accounting.Server.IntegrationTests/Accounting.Server.IntegrationTests.csproj --configuration Release --no-restore --logger "trx;LogFileName=server.trx"
 
@@ -56,17 +59,31 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Restore Windows app
-        run: dotnet restore src/Accounting.UI.Windows/Accounting.UI.Windows.csproj
+      - name: Restore Windows app and cold-start tests
+        run: |
+          dotnet restore src/Accounting.UI.Windows/Accounting.UI.Windows.csproj
+          dotnet restore tests/Accounting.UI.Windows.ColdStartTests/Accounting.UI.Windows.ColdStartTests.csproj
       - name: Build Windows app
         run: dotnet build src/Accounting.UI.Windows/Accounting.UI.Windows.csproj --configuration Release --no-restore
-      - name: Publish runnable Windows x64 application
-        run: dotnet publish src/Accounting.UI.Windows/Accounting.UI.Windows.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishReadyToRun=false --output dist/qodynex-windows-client
-      - name: Upload Windows client
+      - name: Windows cold-start offline bootstrap test
+        run: dotnet test tests/Accounting.UI.Windows.ColdStartTests/Accounting.UI.Windows.ColdStartTests.csproj --configuration Release --no-restore --logger "trx;LogFileName=windows-cold-start.trx"
+      - name: Publish single-file Windows x64 application
+        shell: pwsh
+        run: |
+          dotnet publish src/Accounting.UI.Windows/Accounting.UI.Windows.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -p:PublishReadyToRun=false --output dist/windows
+          if (-not (Test-Path "dist/windows/Qodynex.exe")) { throw "Qodynex.exe was not produced." }
+          Copy-Item "dist/windows/Qodynex.exe" "dist/Qodynex.exe" -Force
+      - name: Smoke-test published Qodynex.exe
+        shell: pwsh
+        run: |
+          $env:QODYNEX_SQLITE_PATH = Join-Path $env:RUNNER_TEMP "qodynex-published-cold-start.db"
+          $process = Start-Process -FilePath (Resolve-Path "dist/Qodynex.exe") -ArgumentList "--cold-start-check" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Published Qodynex.exe cold-start failed with exit code $($process.ExitCode)." }
+      - name: Upload clean Windows executable
         uses: actions/upload-artifact@v4
         with:
-          name: qodynex-windows-client
-          path: dist/qodynex-windows-client/
+          name: Qodynex-Windows
+          path: dist/Qodynex.exe
           if-no-files-found: error
           retention-days: 14
 
@@ -91,13 +108,15 @@ jobs:
             --framework net8.0-android --configuration Release \
             -p:AndroidPackageFormats=apk -p:AndroidKeyStore=false \
             -p:AndroidSignPackage=true
-          mkdir -p dist/qodynex-android-apk
-          find src/Accounting.UI.Android/bin/Release/net8.0-android -type f -name '*-Signed.apk' -exec cp {} dist/qodynex-android-apk/ \;
-          test -n "$(find dist/qodynex-android-apk -maxdepth 1 -name '*.apk' -print -quit)"
-      - name: Upload Android test APK
+          mkdir -p dist
+          apk="$(find src/Accounting.UI.Android/bin/Release/net8.0-android -type f -name '*-Signed.apk' -print -quit)"
+          test -n "$apk"
+          cp "$apk" dist/Qodynex-Android.apk
+          test -s dist/Qodynex-Android.apk
+      - name: Upload clean Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: qodynex-android-apk
-          path: dist/qodynex-android-apk/*.apk
+          name: Qodynex-Android
+          path: dist/Qodynex-Android.apk
           if-no-files-found: error
           retention-days: 14
