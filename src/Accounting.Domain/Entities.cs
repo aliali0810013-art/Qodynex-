@@ -422,6 +422,10 @@ public sealed class JournalLine : TenantEntity
     private JournalLine() { }
     internal JournalLine(Guid companyId, Guid branchId, Guid journalEntryId, Guid accountId, decimal debit, decimal credit, string memo, CompanyPolicy policy, ICurrencyPolicyService currency) : base(companyId, branchId)
     {
+        // Reject sub-cent amounts instead of rounding a small imbalance to zero.
+        // All posted journal lines must already be expressed in currency units.
+        if (currency.RoundMoney(debit, policy) != debit || currency.RoundMoney(credit, policy) != credit)
+            throw new AccountingDomainException("Journal line precision exceeds the company currency scale.");
         debit = currency.RoundMoney(debit, policy); credit = currency.RoundMoney(credit, policy);
         if (debit < 0m || credit < 0m) throw new AccountingDomainException("Journal values cannot be negative.");
         if ((debit > 0m && credit > 0m) || (debit == 0m && credit == 0m)) throw new AccountingDomainException("Exactly one side must be positive.");

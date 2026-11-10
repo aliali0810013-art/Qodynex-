@@ -94,4 +94,70 @@ public sealed class IntegrationTests
         }));
         t.Db.ChangeTracker.Clear(); Assert.False(await t.Db.AuditLogs.AnyAsync(x=>x.EntityId==entityId)); Assert.False(await t.Db.OutboxMessages.AnyAsync(x=>x.IdempotencyKey=="probe"));
     }
+
+    [Theory]
+    [InlineData("UPDATE JournalEntries SET Description = 'tamper' WHERE Status = 1")]
+    [InlineData("DELETE FROM JournalEntries WHERE Status = 1")]
+    [InlineData("UPDATE JournalLines SET Memo = 'tamper'")]
+    [InlineData("DELETE FROM JournalLines")]
+    [InlineData("UPDATE StockLedgerEntries SET UnitCost = 999")]
+    [InlineData("DELETE FROM StockLedgerEntries")]
+    [InlineData("UPDATE AuditLogs SET Action = 'tamper'")]
+    [InlineData("DELETE FROM AuditLogs")]
+    public async Task Raw_SQL_Triggers_Block_Update_And_Delete_Of_Posted_Financial_Records(string sql)
+    {
+        await using var t = await TestDatabase.CreateAsync();
+        var purchase = await t.Purchase("TRIGGER-POSTED",10m,100m);
+        await t.Engine.PostPurchaseInvoiceAsync(new(purchase.Id,t.Context("trigger-guard")));
+        t.Db.ChangeTracker.Clear();
+        var error = await Assert.ThrowsAsync<SqliteException>(()=> t.Db.Database.ExecuteSqlRawAsync(sql));
+        Assert.Contains("SECURITY",error.Message,StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Reversal_Nets_Trial_Balance_To_Zero_Without_Deleting_Journals()
+    {
+        await using var t = await TestDatabase.CreateAsync();
+        var purchase = await t.Purchase("TB-PURCHASE",10m,100m);
+        await t.Engine.PostPurchaseInvoiceAsync(new(purchase.Id,t.Context("tb-p")));
+        var reversal = await t.Engine.ReversePostedDocumentAsync(new(purchase.Id,t.Context("tb-r")));
+        var journalIds = await t.Db.JournalEntries.AsNoTracking()
+            .Where(x => x.SourceDocumentId == purchase.Id).Select(x=>x.Id).ToArrayAsync();
+        Assert.Equal(2,journalIds.Length);
+        Assert.Contains(reversal.JournalEntryId,journalIds);
+        var lines = await t.Db.JournalLines.AsNoTracking()
+            .Where(x=>journalIds.Contains(x.JournalEntryId)).ToListAsync();
+        Assert.NotEmpty(lines);
+        foreach (var group in lines.GroupBy(x=>x.AccountId))
+            Assert.Equal(0m, group.Sum(x=>x.Debit-x.Credit));
+    }
+
+    [Fact]
+    public async Task Different_Purchase_And_Sale_Units_Preserve_Wac_And_Cogs()
+    {
+        await using var t = await TestDatabase.CreateAsync();
+        var box = new UnitOfMeasure(t.Company.Id,t.Branch.Id,"BOX5","Box of five");
+        t.Db.UnitOfMeasures.Add(box);
+        await t.Db.SaveChangesAsync();
+        var p1 = new PurchaseInvoice(t.Company.Id,t.Branch.Id,"BOX-P1","CORE",
+            t.Clock.UtcNow,t.Warehouse.Id,t.Cash.Id);
+        p1.AddLine(t.Item.Id,box.Id,2m,5m,500m);
+        t.Db.Add(p1); await t.Db.SaveChangesAsync();
+        await t.Engine.PostPurchaseInvoiceAsync(new(p1.Id,t.Context("box-p1"))); t.Clock.Advance();
+        var p2 = await t.Purchase("EA-P2",10m,200m);
+        await t.Engine.PostPurchaseInvoiceAsync(new(p2.Id,t.Context("ea-p2"))); t.Clock.Advance();
+        var sale = new SalesInvoice(t.Company.Id,t.Branch.Id,"BOX-SALE","CORE",
+            t.Clock.UtcNow,t.Warehouse.Id,t.Cash.Id);
+        sale.AddLine(t.Item.Id,box.Id,1m,5m,1250m);
+        t.Db.Add(sale); await t.Db.SaveChangesAsync();
+        await t.Engine.PostSalesInvoiceAsync(new(sale.Id,t.Context("box-sale")));
+        var stock = await t.Db.StockLedgerEntries.AsNoTracking()
+            .Where(x=>x.ItemId==t.Item.Id).OrderBy(x=>x.PostedAtUtc).ThenBy(x=>x.Id).ToListAsync();
+        var state = new InventoryValuationEngine(new CurrencyPolicyService()).CalculateState(stock,t.Company.GetPolicy());
+        Assert.Equal(15m,state.QuantityOnHand);
+        Assert.Equal(150m,state.AverageUnitCost);
+        var cogsLines = await t.Db.JournalLines.AsNoTracking()
+            .Where(x=>x.AccountId==t.Cogs.Id).ToListAsync();
+        Assert.Equal(750m,cogsLines.Sum(x=>x.Debit));
+    }
 }

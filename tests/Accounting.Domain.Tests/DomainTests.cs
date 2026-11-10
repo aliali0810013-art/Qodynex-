@@ -41,4 +41,44 @@ public sealed class DomainTests
         var engine=new InventoryValuationEngine(_currency); var state=engine.CalculateState(entries,_policy); var issue=engine.CalculateIssue(entries,5m,_policy,false);
         Assert.Equal(150m,state.AverageUnitCost); Assert.Equal(750m,issue.TotalCost);
     }
+
+    [Theory]
+    [InlineData("0.0001")]
+    [InlineData("0.001")]
+    [InlineData("0.0099")]
+    public void Rejects_Silent_Subcent_Journal_Imbalance(string deltaText)
+    {
+        var delta = decimal.Parse(deltaText, System.Globalization.CultureInfo.InvariantCulture);
+        var c = UuidV7.NewGuid(); var b = UuidV7.NewGuid();
+        var cash = new Account(c,b,"101","Cash",AccountType.Asset,NormalBalance.Debit,true);
+        var sales = new Account(c,b,"401","Revenue",AccountType.Revenue,NormalBalance.Credit,true);
+        var journal = new JournalEntry(c,b,DateTimeOffset.UtcNow,"fractional imbalance","R",
+            UuidV7.NewGuid(),"Test",UuidV7.NewGuid(),"fraction");
+        journal.AddLine(cash.Id,100m,0m,"",_policy,_currency);
+        Assert.Throws<AccountingDomainException>(() =>
+            journal.AddLine(sales.Id,0m,100m - delta,"",_policy,_currency));
+    }
+
+    [Fact]
+    public void Reversal_Exactly_Neutralizes_Original_Journal()
+    {
+        var c=UuidV7.NewGuid(); var b=UuidV7.NewGuid();
+        var cash = new Account(c,b,"100","Cash",AccountType.Asset,NormalBalance.Debit,true);
+        var sales = new Account(c,b,"400","Revenue",AccountType.Revenue,NormalBalance.Credit,true);
+        var accounts = new Dictionary<Guid,Account>{{cash.Id,cash},{sales.Id,sales}};
+        var now = DateTimeOffset.UtcNow;
+        var journal = new JournalEntry(c,b,now,"Sale","S",UuidV7.NewGuid(),"Sale",UuidV7.NewGuid(),"original");
+        journal.AddLine(cash.Id,250m,0m,"",_policy,_currency);
+        journal.AddLine(sales.Id,0m,250m,"",_policy,_currency);
+        journal.Post(accounts,_policy,_currency,now);
+        var reverse = journal.CreateReversal(UuidV7.NewGuid(),"reversal",now.AddSeconds(1),accounts,_policy,_currency);
+        Assert.Equal(journal.Id, reverse.ReversedEntryId);
+        Assert.Equal(PostingStatus.Posted, reverse.Status);
+        foreach (var account in accounts.Keys)
+        {
+            var originalNet = journal.Lines.Where(x=>x.AccountId==account).Sum(x=>x.Debit-x.Credit);
+            var reverseNet = reverse.Lines.Where(x=>x.AccountId==account).Sum(x=>x.Debit-x.Credit);
+            Assert.Equal(0m,originalNet+reverseNet);
+        }
+    }
 }
