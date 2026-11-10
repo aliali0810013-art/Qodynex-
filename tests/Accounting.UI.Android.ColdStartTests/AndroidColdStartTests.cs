@@ -1,3 +1,4 @@
+using Xunit;
 using Accounting.Infrastructure.Local;
 using Accounting.SharedKernel;
 using Accounting.UI.Android;
