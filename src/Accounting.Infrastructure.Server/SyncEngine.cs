@@ -538,8 +538,16 @@ public sealed class SyncPushCommandHandler
                     .ToListAsync(cancellationToken).ConfigureAwait(false);
                 var valuationRows = serverLedger.Select(x => new StockLedgerValuationRow(
                     x.Id, x.ItemId, x.WarehouseId, x.QuantityDelta, x.InventoryValueDelta, x.UnitCost, x.PostedAtUtc)).ToArray();
-                var valuation = new InventoryValuationEngine(_currency).CalculateIssue(valuationRows, expected.Value, policy,
-                    (await _db.Warehouses.AsNoTracking().SingleAsync(x => x.Id == payload.Document.WarehouseId.Value, cancellationToken).ConfigureAwait(false)).AllowNegativeStockOverride ?? policy.AllowNegativeStock);
+                InventoryIssueValuation valuation;
+                try
+                {
+                    valuation = new InventoryValuationEngine(_currency).CalculateIssue(valuationRows, expected.Value, policy,
+                        (await _db.Warehouses.AsNoTracking().SingleAsync(x => x.Id == payload.Document.WarehouseId.Value, cancellationToken).ConfigureAwait(false)).AllowNegativeStockOverride ?? policy.AllowNegativeStock);
+                }
+                catch (NegativeStockNotAllowedException shortage)
+                {
+                    throw new ServerSyncConflictException("NEGATIVE_STOCK_CONFLICT", shortage.Message);
+                }
 
                 var actualValue = _currency.RoundMoney(-stockRows.Sum(x => x.InventoryValueDelta), policy);
                 if (actualValue != valuation.TotalCost)
