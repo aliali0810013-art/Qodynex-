@@ -171,6 +171,15 @@ public partial class App : System.Windows.Application
 
             var mainWindow = new MainShellWindow(shell, coordinator);
             MainWindow = mainWindow;
+
+            // CI executes the published single-file binary with this switch to
+            // prove migrations, SQLite native extraction, seed and UI composition.
+            if (e.Args.Any(x => string.Equals(x, "--cold-start-check", StringComparison.OrdinalIgnoreCase)))
+            {
+                Shutdown(0);
+                return;
+            }
+
             mainWindow.Show();
             mainWindow.Activate();
         }
