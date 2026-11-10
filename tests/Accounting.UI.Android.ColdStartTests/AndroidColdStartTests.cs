@@ -54,7 +54,11 @@ public sealed class AndroidColdStartTests
 
     private static void DeleteSqlite(string path)
     {
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         foreach (var file in new[] { path, path + "-wal", path + "-shm" })
-            if (File.Exists(file)) File.Delete(file);
+        {
+            try { if (File.Exists(file)) File.Delete(file); }
+            catch (IOException) { }
+        }
     }
 }

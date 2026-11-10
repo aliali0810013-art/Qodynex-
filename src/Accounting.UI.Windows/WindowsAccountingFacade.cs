@@ -103,7 +103,7 @@ public sealed class WindowsAccountingFacade
                                        && conversion.BranchId == _user.BranchId
                                        && conversion.ItemId == itemId
                                        && conversion.UnitOfMeasureId != item.BaseUnitOfMeasureId
-                                 orderby conversion.BaseUnitsPerUnit
+                                 orderby unit.Code, unit.Name
                                  select new ItemUnitOption(unit.Id, unit.Code, unit.Name, conversion.BaseUnitsPerUnit))
             .ToListAsync(ct).ConfigureAwait(false);
         result.AddRange(conversions);
