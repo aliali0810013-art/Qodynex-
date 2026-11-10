@@ -12,6 +12,7 @@ namespace Accounting.UI.Android;
 public sealed class MobileSessionSettings
 {
     private const string AccessTokenKey = "qodynex.access_token";
+    private const string LocalDemoKey = "qodynex.local_demo";
 
     public string ServerUrl { get => Preferences.Default.Get(nameof(ServerUrl), string.Empty); set => Preferences.Default.Set(nameof(ServerUrl), value.Trim()); }
     public Guid CompanyId { get => ReadGuid(nameof(CompanyId)); set => Preferences.Default.Set(nameof(CompanyId), value.ToString("D")); }
@@ -22,6 +23,22 @@ public sealed class MobileSessionSettings
 
     public bool HasIdentity => CompanyId != Guid.Empty && BranchId != Guid.Empty && UserId != Guid.Empty && DeviceId != Guid.Empty;
     public bool HasServer => Uri.TryCreate(ServerUrl, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps;
+    public bool IsLocalDemo => Preferences.Default.Get(LocalDemoKey, false);
+
+    public void EnsureLocalDemoIdentity()
+    {
+        if (HasIdentity) return;
+        var identity = LocalClientIdentity.Create();
+        CompanyId = identity.CompanyId;
+        BranchId = identity.BranchId;
+        UserId = identity.UserId;
+        DeviceId = identity.DeviceId;
+        ServerUrl = string.Empty;
+        ClearAccessToken();
+        Preferences.Default.Set(LocalDemoKey, true);
+    }
+
+    public void MarkServerIdentity() => Preferences.Default.Set(LocalDemoKey, false);
 
     public Task<string?> GetAccessTokenAsync() => SecureStorage.Default.GetAsync(AccessTokenKey);
     public Task SetAccessTokenAsync(string token) => SecureStorage.Default.SetAsync(AccessTokenKey, token.Trim());
@@ -57,7 +74,7 @@ public sealed class MobileRuntime : IAsyncDisposable
         try
         {
             if (IsInitialized) return;
-            if (!_settings.HasIdentity) throw new InvalidOperationException("هوية الشركة/الفرع/المستخدم/الجهاز غير مهيأة.");
+            if (!_settings.HasIdentity) _settings.EnsureLocalDemoIdentity();
 
             UserContext = UserContext.Authenticated(_settings.UserId, _settings.CompanyId, _settings.BranchId, _settings.DeviceId);
             if (Db is null)
@@ -70,6 +87,17 @@ public sealed class MobileRuntime : IAsyncDisposable
                 Db = new LocalAccountingDbContext(options);
                 await new LocalDatabaseBootstrapper(Db).InitializeAsync(cancellationToken).ConfigureAwait(false);
                 SyncStore = new LocalSyncStore(Db);
+
+                if (_settings.IsLocalDemo)
+                {
+                    await new LocalFirstRunBootstrapper(Db)
+                        .EnsureDemoSeedAsync(new LocalClientIdentity(
+                            _settings.CompanyId,
+                            _settings.BranchId,
+                            _settings.UserId,
+                            _settings.DeviceId), cancellationToken)
+                        .ConfigureAwait(false);
+                }
             }
 
             var token = await _settings.GetAccessTokenAsync().ConfigureAwait(false);
@@ -95,7 +123,7 @@ public sealed class MobileRuntime : IAsyncDisposable
             }
 
             if (!await Db.Companies.AsNoTracking().AnyAsync(x => x.Id == _settings.CompanyId, cancellationToken).ConfigureAwait(false))
-                throw new InvalidOperationException("لا توجد بيانات تهيئة محلية. اتصل بالخادم ونفذ Bootstrap أولاً.");
+                throw new InvalidOperationException("لا توجد بيانات محلية لهذه الهوية. أعد التهيئة أو استخدم التشغيل المحلي التجريبي.");
 
             await BuildServicesAsync(cancellationToken).ConfigureAwait(false);
         }
