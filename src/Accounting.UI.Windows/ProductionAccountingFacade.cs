@@ -283,6 +283,20 @@ public sealed partial class WindowsAccountingFacade
         return new PartnerLookup(partner.Id, partner.Code, partner.Name, partner.ControlAccountId, partner.CreditLimit, partner.PartnerType);
     }
 
+    public async Task<DocumentPrintInfo> GetVoucherPrintInfoAsync(bool receipt, Guid documentId, CancellationToken ct = default)
+    {
+        var official = await _db.OfficialSequenceAssignments.AsNoTracking()
+            .Where(x => x.DocumentId == documentId).Select(x => x.OfficialSequenceNumber)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false) ?? "-";
+        if (receipt)
+        {
+            var d=await _db.ReceiptVouchers.AsNoTracking().SingleAsync(x=>x.Id==documentId&&x.CompanyId==_user.CompanyId&&x.BranchId==_user.BranchId,ct).ConfigureAwait(false);
+            return new(d.LocalTempNumber,official,d.DocumentDateUtc);
+        }
+        var p=await _db.PaymentVouchers.AsNoTracking().SingleAsync(x=>x.Id==documentId&&x.CompanyId==_user.CompanyId&&x.BranchId==_user.BranchId,ct).ConfigureAwait(false);
+        return new(p.LocalTempNumber,official,p.DocumentDateUtc);
+    }
+
     public async Task<DocumentPrintInfo> GetDocumentPrintInfoAsync(bool sales, Guid documentId, CancellationToken ct = default)
     {
         var official = await _db.OfficialSequenceAssignments.AsNoTracking()
