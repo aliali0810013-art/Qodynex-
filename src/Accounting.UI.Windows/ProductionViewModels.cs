@@ -113,6 +113,7 @@ public sealed partial class VoucherEditorViewModel
     private PartnerLookup? _selectedVoucherPartner;
 
     public ObservableCollection<AccountLookup> VoucherAccounts { get; } = new();
+    public ObservableCollection<AccountLookup> VoucherCashAccounts { get; } = new();
     public ObservableCollection<PartnerLookup> VoucherPartners { get; } = new();
     public AccountLookup? SelectedCashAccount { get => _selectedCashAccount; set { if (Set(ref _selectedCashAccount, value) && value is not null) CashAccountIdText = value.Id.ToString("D"); } }
     public AccountLookup? SelectedCounterAccount { get => _selectedCounterAccount; set { if (Set(ref _selectedCounterAccount, value) && value is not null) CounterAccountIdText = value.Id.ToString("D"); } }
@@ -132,11 +133,13 @@ public sealed partial class VoucherEditorViewModel
         try
         {
             var accountsTask = _facade.SearchAccountsAsync(string.Empty);
-            var partnersTask = _facade.SearchPartnersAsync(string.Empty);
-            await Task.WhenAll(accountsTask, partnersTask).ConfigureAwait(true);
+            var cashTask = _facade.GetCashBankAccountsAsync();
+            var partnersTask = _facade.SearchPartnersByTypeAsync(_isReceipt ? PartnerType.Customer : PartnerType.Supplier);
+            await Task.WhenAll(accountsTask, cashTask, partnersTask).ConfigureAwait(true);
             VoucherAccounts.Clear(); foreach (var row in accountsTask.Result) VoucherAccounts.Add(row);
+            VoucherCashAccounts.Clear(); foreach (var row in cashTask.Result) VoucherCashAccounts.Add(row);
             VoucherPartners.Clear(); foreach (var row in partnersTask.Result) VoucherPartners.Add(row);
-            SelectedCashAccount = VoucherAccounts.FirstOrDefault(x => x.Code.StartsWith("111", StringComparison.Ordinal)) ?? VoucherAccounts.FirstOrDefault();
+            SelectedCashAccount = VoucherCashAccounts.FirstOrDefault();
             SelectedCounterAccount = VoucherAccounts.FirstOrDefault(x => x.Id != SelectedCashAccount?.Id);
         }
         catch (Exception ex) { Status = ex.Message; }
