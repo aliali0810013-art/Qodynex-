@@ -261,6 +261,69 @@ public sealed class WindowsColdStartTests
         }
     }
 
+    [Fact]
+    public async Task Backup_Restore_Integrity_And_ServerUrl_Are_Operational()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"qodynex-maint-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "live.db");
+        var backupPath = Path.Combine(directory, "backup.db");
+
+        try
+        {
+            var options = new DbContextOptionsBuilder<LocalAccountingDbContext>()
+                .UseSqlite($"Data Source={path}")
+                .AddInterceptors(new ImmutabilityInterceptor())
+                .Options;
+            await using var db = new LocalAccountingDbContext(options);
+            await new LocalDatabaseBootstrapper(db).InitializeAsync();
+
+            var identity = LocalClientIdentity.Create();
+            await new LocalFirstRunBootstrapper(db).EnsureDemoSeedAsync(identity);
+            var user = UserContext.Authenticated(identity.UserId, identity.CompanyId, identity.BranchId, identity.DeviceId);
+            var store = new EfAccountingDataStore(db);
+            var currency = new CurrencyPolicyService();
+            var inventory = new InventoryValuationEngine(currency);
+            var queries = new AccountingQueryService(store, currency, inventory);
+            var registry = new ModuleRegistry(new IActivityModule[] { new RetailModule(store) });
+            var posting = new AccountingPostingEngine(
+                store,
+                new SqliteUnitOfWork(db),
+                new PermissionGuard(new EfUserAuthorizationReader(db)),
+                new DocumentPostingRuleRegistry(registry.PostingRules(new[] { RetailModule.ModuleKey })),
+                currency,
+                inventory,
+                new SystemClock());
+            var facade = new WindowsAccountingFacade(
+                db, posting, queries, new LocalTempNumberGenerator(db), user);
+
+            var integrity = await facade.CheckLocalDatabaseIntegrityAsync();
+            Assert.True(integrity.IsHealthy, integrity.Summary);
+
+            var created = await facade.CreateLocalBackupAsync(backupPath);
+            Assert.Equal(Path.GetFullPath(backupPath), created);
+            Assert.True(File.Exists(backupPath));
+            Assert.True((await LocalDatabaseMaintenanceService.ValidateSqliteFileAsync(backupPath, true)).IsHealthy);
+
+            await facade.SaveServerUrlAsync("https://sync.qodynex.test/");
+            Assert.Equal("https://sync.qodynex.test", await facade.GetServerUrlAsync());
+
+            var pending = await facade.ScheduleLocalRestoreAsync(backupPath);
+            Assert.True(File.Exists(pending));
+
+            await db.DisposeAsync();
+            LocalDatabaseMaintenanceService.ApplyPendingRestoreIfAny(path);
+            Assert.False(File.Exists(path + ".restore.pending"));
+            Assert.True((await LocalDatabaseMaintenanceService.ValidateSqliteFileAsync(path, true)).IsHealthy);
+            Assert.NotEmpty(Directory.GetFiles(directory, "qodynex_pre_restore_*.db"));
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            try { Directory.Delete(directory, recursive: true); } catch (IOException) { }
+        }
+    }
+
     private static void DeleteSqlite(string path)
     {
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();

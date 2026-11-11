@@ -4,6 +4,7 @@ using Accounting.Domain;
 using Accounting.Infrastructure.Local;
 using Accounting.SharedKernel;
 using Accounting.Sync.Client;
+using Microsoft.Win32;
 
 namespace Accounting.UI.Windows;
 
@@ -424,34 +425,170 @@ public sealed class AccountsWorkspaceViewModel : ObservableObject, IWorkspaceAct
 
 public sealed class ReportsSyncViewModel : ObservableObject, IWorkspaceActionTarget
 {
-    private readonly WindowsAccountingFacade _facade; private readonly LocalSyncStore _syncStore; private readonly UserContext _user;
-    private PartnerLookup? _selectedPartner; private string _partnerBalance="-",_syncSummary="-",_status="جاهز";
-    public ObservableCollection<PartnerLookup> Partners { get; }=new(); public ObservableCollection<LedgerRow> StatementRows { get; }=new();
-    public ObservableCollection<TrialBalanceRow> TrialBalance { get; }=new(); public ObservableCollection<OutboxUiRow> Outbox { get; }=new(); public ObservableCollection<ConflictUiRow> Conflicts { get; }=new();
+    private readonly WindowsAccountingFacade _facade;
+    private readonly LocalSyncStore _syncStore;
+    private readonly UserContext _user;
+    private PartnerLookup? _selectedPartner;
     private ConflictUiRow? _selectedConflict;
+    private string _partnerBalance="-",_syncSummary="-",_status="جاهز",_serverUrl="";
+
+    public ObservableCollection<PartnerLookup> Partners { get; }=new();
+    public ObservableCollection<LedgerRow> StatementRows { get; }=new();
+    public ObservableCollection<TrialBalanceRow> TrialBalance { get; }=new();
+    public ObservableCollection<OutboxUiRow> Outbox { get; }=new();
+    public ObservableCollection<ConflictUiRow> Conflicts { get; }=new();
+
     public ConflictUiRow? SelectedConflict { get=>_selectedConflict; set=>Set(ref _selectedConflict,value); }
     public PartnerLookup? SelectedPartner { get=>_selectedPartner; set=>Set(ref _selectedPartner,value); }
     public string PartnerBalance { get=>_partnerBalance; private set=>Set(ref _partnerBalance,value); }
     public string SyncSummary { get=>_syncSummary; private set=>Set(ref _syncSummary,value); }
     public string Status { get=>_status; private set=>Set(ref _status,value); }
-    public AsyncRelayCommand LoadStatementCommand { get; } public AsyncRelayCommand RefreshCommand { get; } public AsyncRelayCommand ResolveConflictCommand { get; }
+    public string ServerUrl { get=>_serverUrl; set=>Set(ref _serverUrl,value); }
+
+    public AsyncRelayCommand LoadStatementCommand { get; }
+    public AsyncRelayCommand RefreshCommand { get; }
+    public AsyncRelayCommand ResolveConflictCommand { get; }
+    public AsyncRelayCommand BackupCommand { get; }
+    public AsyncRelayCommand RestoreCommand { get; }
+    public AsyncRelayCommand IntegrityCommand { get; }
+    public AsyncRelayCommand SaveServerUrlCommand { get; }
+
     public ReportsSyncViewModel(WindowsAccountingFacade facade,LocalSyncStore syncStore,UserContext user)
-    { _facade=facade;_syncStore=syncStore;_user=user;LoadStatementCommand=new AsyncRelayCommand(LoadStatementAsync);RefreshCommand=new AsyncRelayCommand(RefreshAsync);ResolveConflictCommand=new AsyncRelayCommand(ResolveConflictAsync);_=RefreshAsync();}
+    {
+        _facade=facade;
+        _syncStore=syncStore;
+        _user=user;
+        LoadStatementCommand=new AsyncRelayCommand(LoadStatementAsync);
+        RefreshCommand=new AsyncRelayCommand(RefreshAsync);
+        ResolveConflictCommand=new AsyncRelayCommand(ResolveConflictAsync);
+        BackupCommand=new AsyncRelayCommand(BackupAsync);
+        RestoreCommand=new AsyncRelayCommand(RestoreAsync);
+        IntegrityCommand=new AsyncRelayCommand(CheckIntegrityAsync);
+        SaveServerUrlCommand=new AsyncRelayCommand(SaveServerUrlAsync);
+        _=RefreshAsync();
+    }
+
     public async Task RefreshAsync()
     {
         try
         {
-            var p=_facade.SearchPartnersAsync("");var t=_facade.GetTrialBalanceAsync();var s=_facade.GetSyncCenterAsync();await Task.WhenAll(p,t,s).ConfigureAwait(true);
-            Partners.Clear();foreach(var x in p.Result)Partners.Add(x);if(SelectedPartner is null)SelectedPartner=Partners.FirstOrDefault();
-            TrialBalance.Clear();foreach(var x in t.Result)TrialBalance.Add(x); Outbox.Clear();foreach(var x in s.Result.Outbox)Outbox.Add(x); Conflicts.Clear();foreach(var x in s.Result.Conflicts)Conflicts.Add(x);
+            var p=_facade.SearchPartnersAsync("");
+            var t=_facade.GetTrialBalanceAsync();
+            var s=_facade.GetSyncCenterAsync();
+            var url=_facade.GetServerUrlAsync();
+            await Task.WhenAll(p,t,s,url).ConfigureAwait(true);
+
+            Partners.Clear();
+            foreach(var x in p.Result)Partners.Add(x);
+            if(SelectedPartner is null)SelectedPartner=Partners.FirstOrDefault();
+
+            TrialBalance.Clear();
+            foreach(var x in t.Result)TrialBalance.Add(x);
+            Outbox.Clear();
+            foreach(var x in s.Result.Outbox)Outbox.Add(x);
+            Conflicts.Clear();
+            foreach(var x in s.Result.Conflicts)Conflicts.Add(x);
+
+            ServerUrl=url.Result;
             var ls=await _syncStore.GetStatusAsync(_user).ConfigureAwait(true);
             SyncSummary=$"Outbox {ls.PendingOutbox+ls.RetryableFailures} | تعارضات {ls.UnresolvedConflicts} | آخر مزامنة {(ls.LastSuccessfulSyncUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm")??"-")}";
             Status="تم تحديث التقارير ومركز المزامنة.";
-        }catch(Exception ex){Status=ex.Message;}
+        }
+        catch(Exception ex){Status=ex.Message;}
     }
-    private async Task LoadStatementAsync(){try{if(SelectedPartner is null)throw new InvalidOperationException("حدد العميل/المورد.");var x=await _facade.GetPartnerStatementAsync(SelectedPartner.Id).ConfigureAwait(true);StatementRows.Clear();foreach(var row in x.Rows)StatementRows.Add(row);PartnerBalance=$"{x.PartnerName} — الرصيد {x.Balance:N2}";}catch(Exception ex){Status=ex.Message;}}
-    private async Task ResolveConflictAsync(){try{if(SelectedConflict is null)throw new InvalidOperationException("حدد تعارضاً.");await _facade.ResolveConflictLocallyAsync(SelectedConflict.Id).ConfigureAwait(true);Status="تم تعليم التعارض كمحلول محلياً بعد المعالجة.";await RefreshAsync().ConfigureAwait(true);}catch(Exception ex){Status=ex.Message;}}
-    public Task SaveAndPostAsync()=>RefreshAsync(); public Task QuickSearchAsync()=>LoadStatementAsync(); public Task OpenSelectedDetailsAsync()=>LoadStatementAsync();
+
+    private async Task LoadStatementAsync()
+    {
+        try
+        {
+            if(SelectedPartner is null)throw new InvalidOperationException("حدد العميل/المورد.");
+            var x=await _facade.GetPartnerStatementAsync(SelectedPartner.Id).ConfigureAwait(true);
+            StatementRows.Clear();
+            foreach(var row in x.Rows)StatementRows.Add(row);
+            PartnerBalance=$"{x.PartnerName} — الرصيد {x.Balance:N2}";
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+
+    private async Task ResolveConflictAsync()
+    {
+        try
+        {
+            if(SelectedConflict is null)throw new InvalidOperationException("حدد تعارضاً.");
+            await _facade.ResolveConflictLocallyAsync(SelectedConflict.Id).ConfigureAwait(true);
+            Status="تم تعليم التعارض كمحلول محلياً بعد المعالجة.";
+            await RefreshAsync().ConfigureAwait(true);
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+
+    private async Task BackupAsync()
+    {
+        try
+        {
+            var dialog=new SaveFileDialog
+            {
+                Title="حفظ نسخة احتياطية لقاعدة Qodynex",
+                Filter="Qodynex SQLite backup (*.db)|*.db|All files (*.*)|*.*",
+                FileName=$"Qodynex-Backup-{DateTime.Now:yyyyMMdd-HHmm}.db",
+                AddExtension=true,
+                DefaultExt=".db"
+            };
+            if(dialog.ShowDialog()!=true)return;
+
+            var path=await _facade.CreateLocalBackupAsync(dialog.FileName).ConfigureAwait(true);
+            Status=$"تم إنشاء نسخة احتياطية والتحقق منها: {path}";
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+
+    private async Task RestoreAsync()
+    {
+        try
+        {
+            var dialog=new OpenFileDialog
+            {
+                Title="اختيار نسخة Qodynex لاستعادتها",
+                Filter="Qodynex SQLite backup (*.db)|*.db|All files (*.*)|*.*",
+                CheckFileExists=true,
+                Multiselect=false
+            };
+            if(dialog.ShowDialog()!=true)return;
+
+            await _facade.ScheduleLocalRestoreAsync(dialog.FileName).ConfigureAwait(true);
+            Status="تم فحص النسخة وتجهيز الاستعادة بأمان. أعد تشغيل Qodynex لتطبيقها؛ ستُحفظ نسخة تلقائية من القاعدة الحالية قبل الاستبدال.";
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+
+    private async Task CheckIntegrityAsync()
+    {
+        try
+        {
+            var result=await _facade.CheckLocalDatabaseIntegrityAsync().ConfigureAwait(true);
+            Status=result.IsHealthy
+                ? $"✓ فحص سلامة الدفاتر ناجح: {result.Summary}"
+                : $"⚠ فشل فحص سلامة الدفاتر: {result.Summary}";
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+
+    private async Task SaveServerUrlAsync()
+    {
+        try
+        {
+            await _facade.SaveServerUrlAsync(ServerUrl).ConfigureAwait(true);
+            ServerUrl=await _facade.GetServerUrlAsync().ConfigureAwait(true);
+            Status=string.IsNullOrWhiteSpace(ServerUrl)
+                ?"تم مسح عنوان الخادم؛ النظام يعمل محلياً."
+                :$"تم حفظ عنوان الخادم: {ServerUrl}";
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+
+    public Task SaveAndPostAsync()=>RefreshAsync();
+    public Task QuickSearchAsync()=>LoadStatementAsync();
+    public Task OpenSelectedDetailsAsync()=>LoadStatementAsync();
 }
 
 public sealed partial class ShellViewModel

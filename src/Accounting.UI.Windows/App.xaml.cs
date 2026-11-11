@@ -54,6 +54,8 @@ public partial class App : System.Windows.Application
                 : Path.GetFullPath(configuredPath);
             Directory.CreateDirectory(Path.GetDirectoryName(dbPath) ?? root);
 
+            LocalDatabaseMaintenanceService.ApplyPendingRestoreIfAny(dbPath);
+
             var legacyDbSmoke = e.Args.Any(x => string.Equals(x, "--legacy-db-smoke", StringComparison.OrdinalIgnoreCase));
             if (legacyDbSmoke && !File.Exists(dbPath))
                 await LegacyDatabaseSmokeFixture.CreateAsync(dbPath).ConfigureAwait(true);
@@ -79,7 +81,10 @@ public partial class App : System.Windows.Application
             }
             else
             {
+                var persistedRuntime = await LocalRuntimeSettingsStore.LoadAsync(dbPath).ConfigureAwait(true);
                 var serverUrl = Environment.GetEnvironmentVariable("QODYNEX_SERVER_URL");
+                if (string.IsNullOrWhiteSpace(serverUrl))
+                    serverUrl = persistedRuntime.ServerUrl;
                 var token = Environment.GetEnvironmentVariable("QODYNEX_ACCESS_TOKEN");
                 if (Uri.TryCreate(serverUrl, UriKind.Absolute, out var baseUri)
                     && baseUri.Scheme == Uri.UriSchemeHttps

@@ -296,18 +296,113 @@
 
     <DataTemplate DataType="{x:Type vm:ReportsSyncViewModel}">
       <TabControl Margin="14">
-        <TabItem Header="كشف حساب"><Grid Margin="8"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-          <StackPanel Orientation="Horizontal"><ComboBox Width="360" ItemsSource="{Binding Partners}" SelectedItem="{Binding SelectedPartner}" DisplayMemberPath="Name"/><Button Style="{StaticResource PrimaryButton}" Content="عرض كشف الحساب" Command="{Binding LoadStatementCommand}"/></StackPanel>
-          <TextBlock Grid.Row="1" Text="{Binding PartnerBalance}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource GoldBrush}" Margin="8"/>
-          <DataGrid Grid.Row="2" ItemsSource="{Binding StatementRows}"><DataGrid.Columns><DataGridTextColumn Header="التاريخ" Binding="{Binding DateUtc, StringFormat={}{0:yyyy-MM-dd}}" Width="130"/><DataGridTextColumn Header="المرجع" Binding="{Binding Reference}" Width="130"/><DataGridTextColumn Header="البيان" Binding="{Binding Description}" Width="*"/><DataGridTextColumn Header="مدين" Binding="{Binding Debit, StringFormat={}{0:N2}}" Width="120"/><DataGridTextColumn Header="دائن" Binding="{Binding Credit, StringFormat={}{0:N2}}" Width="120"/><DataGridTextColumn Header="الرصيد" Binding="{Binding RunningBalance, StringFormat={}{0:N2}}" Width="140"/></DataGrid.Columns></DataGrid>
-        </Grid></TabItem>
-        <TabItem Header="ميزان المراجعة"><DataGrid ItemsSource="{Binding TrialBalance}"><DataGrid.Columns><DataGridTextColumn Header="الكود" Binding="{Binding Code}" Width="120"/><DataGridTextColumn Header="الحساب" Binding="{Binding Name}" Width="*"/><DataGridTextColumn Header="مدين" Binding="{Binding Debit, StringFormat={}{0:N2}}" Width="150"/><DataGridTextColumn Header="دائن" Binding="{Binding Credit, StringFormat={}{0:N2}}" Width="150"/><DataGridTextColumn Header="الرصيد" Binding="{Binding Balance, StringFormat={}{0:N2}}" Width="150"/></DataGrid.Columns></DataGrid></TabItem>
-        <TabItem Header="مركز المزامنة"><Grid Margin="8"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-          <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding SyncSummary}" FontSize="18" FontWeight="Bold"/><Button Grid.Column="1" Content="تحديث" Command="{Binding RefreshCommand}"/></Grid>
-          <DataGrid Grid.Row="1" ItemsSource="{Binding Outbox}"><DataGrid.Columns><DataGridTextColumn Header="الحدث" Binding="{Binding EventType}" Width="*"/><DataGridTextColumn Header="الحالة" Binding="{Binding Status}" Width="110"/><DataGridTextColumn Header="إعادات" Binding="{Binding RetryCount}" Width="80"/><DataGridTextColumn Header="الإنشاء" Binding="{Binding CreatedAtUtc, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="170"/></DataGrid.Columns></DataGrid>
-          <DataGrid Grid.Row="2" ItemsSource="{Binding Conflicts}" SelectedItem="{Binding SelectedConflict}"><DataGrid.Columns><DataGridTextColumn Header="رمز التعارض" Binding="{Binding Code}" Width="200"/><DataGridTextColumn Header="الرسالة" Binding="{Binding Message}" Width="*"/><DataGridTextColumn Header="وقت الخادم" Binding="{Binding ServerTimestampUtc, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="170"/><DataGridCheckBoxColumn Header="محلول" Binding="{Binding IsResolved}" Width="80"/></DataGrid.Columns></DataGrid>
-          <StackPanel Grid.Row="3" Orientation="Horizontal"><Button Style="{StaticResource DangerButton}" Content="تعليم التعارض كمحلول" Command="{Binding ResolveConflictCommand}"/><TextBlock Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="10,0"/></StackPanel>
-        </Grid></TabItem>
+        <TabItem Header="كشف حساب">
+          <Grid Margin="8">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <StackPanel Orientation="Horizontal">
+              <ComboBox Width="360" ItemsSource="{Binding Partners}" SelectedItem="{Binding SelectedPartner}" DisplayMemberPath="Name"/>
+              <Button Style="{StaticResource PrimaryButton}" Content="عرض كشف الحساب" Command="{Binding LoadStatementCommand}"/>
+            </StackPanel>
+            <TextBlock Grid.Row="1" Text="{Binding PartnerBalance}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource GoldBrush}" Margin="8"/>
+            <DataGrid Grid.Row="2" ItemsSource="{Binding StatementRows}">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="التاريخ" Binding="{Binding DateUtc, StringFormat={}{0:yyyy-MM-dd}}" Width="130"/>
+                <DataGridTextColumn Header="المرجع" Binding="{Binding Reference}" Width="130"/>
+                <DataGridTextColumn Header="البيان" Binding="{Binding Description}" Width="*"/>
+                <DataGridTextColumn Header="مدين" Binding="{Binding Debit, StringFormat={}{0:N2}}" Width="120"/>
+                <DataGridTextColumn Header="دائن" Binding="{Binding Credit, StringFormat={}{0:N2}}" Width="120"/>
+                <DataGridTextColumn Header="الرصيد" Binding="{Binding RunningBalance, StringFormat={}{0:N2}}" Width="140"/>
+              </DataGrid.Columns>
+            </DataGrid>
+          </Grid>
+        </TabItem>
+
+        <TabItem Header="ميزان المراجعة">
+          <DataGrid ItemsSource="{Binding TrialBalance}">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="الكود" Binding="{Binding Code}" Width="120"/>
+              <DataGridTextColumn Header="الحساب" Binding="{Binding Name}" Width="*"/>
+              <DataGridTextColumn Header="مدين" Binding="{Binding Debit, StringFormat={}{0:N2}}" Width="150"/>
+              <DataGridTextColumn Header="دائن" Binding="{Binding Credit, StringFormat={}{0:N2}}" Width="150"/>
+              <DataGridTextColumn Header="الرصيد" Binding="{Binding Balance, StringFormat={}{0:N2}}" Width="150"/>
+            </DataGrid.Columns>
+          </DataGrid>
+        </TabItem>
+
+        <TabItem Header="النسخ الاحتياطي وسلامة الدفاتر">
+          <Grid Margin="12">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <Border Style="{StaticResource CardBorder}">
+              <StackPanel>
+                <TextBlock Text="قاعدة البيانات المحلية" FontSize="20" FontWeight="Bold"/>
+                <TextBlock Text="النسخ الاحتياطية تُفحص قبل الحفظ والاستعادة، والاستعادة تُطبّق عند الإقلاع التالي بعد حفظ نسخة من القاعدة الحالية."
+                           Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,5,0,10"/>
+                <WrapPanel>
+                  <Button Style="{StaticResource PrimaryButton}" Content="حفظ نسخة احتياطية الآن" Command="{Binding BackupCommand}"/>
+                  <Button Content="استعادة نسخة احتياطية" Command="{Binding RestoreCommand}"/>
+                  <Button Content="فحص سلامة الدفاتر" Command="{Binding IntegrityCommand}"/>
+                </WrapPanel>
+              </StackPanel>
+            </Border>
+            <Border Grid.Row="1" Style="{StaticResource CardBorder}">
+              <StackPanel>
+                <TextBlock Text="نتيجة الصيانة" FontWeight="SemiBold"/>
+                <TextBlock Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+              </StackPanel>
+            </Border>
+          </Grid>
+        </TabItem>
+
+        <TabItem Header="مركز المزامنة">
+          <Grid Margin="8">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Border Style="{StaticResource CardBorder}">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="عنوان الخادم HTTPS" VerticalAlignment="Center" Margin="6"/>
+                <TextBox Grid.Column="1" Text="{Binding ServerUrl,UpdateSourceTrigger=PropertyChanged}"
+                         ToolTip="مثال: https://api.example.com" MinWidth="380"/>
+                <Button Grid.Column="2" Style="{StaticResource PrimaryButton}" Content="حفظ عنوان الخادم" Command="{Binding SaveServerUrlCommand}"/>
+              </Grid>
+            </Border>
+
+            <Grid Grid.Row="1">
+              <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <TextBlock Text="{Binding SyncSummary}" FontSize="18" FontWeight="Bold" VerticalAlignment="Center"/>
+              <Button Grid.Column="1" Content="تحديث" Command="{Binding RefreshCommand}"/>
+            </Grid>
+
+            <DataGrid Grid.Row="2" ItemsSource="{Binding Outbox}">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="الحدث" Binding="{Binding EventType}" Width="*"/>
+                <DataGridTextColumn Header="الحالة" Binding="{Binding Status}" Width="110"/>
+                <DataGridTextColumn Header="إعادات" Binding="{Binding RetryCount}" Width="80"/>
+                <DataGridTextColumn Header="الإنشاء" Binding="{Binding CreatedAtUtc, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="170"/>
+              </DataGrid.Columns>
+            </DataGrid>
+
+            <DataGrid Grid.Row="3" ItemsSource="{Binding Conflicts}" SelectedItem="{Binding SelectedConflict}">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="رمز التعارض" Binding="{Binding Code}" Width="200"/>
+                <DataGridTextColumn Header="الرسالة" Binding="{Binding Message}" Width="*"/>
+                <DataGridTextColumn Header="وقت الخادم" Binding="{Binding ServerTimestampUtc, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="170"/>
+                <DataGridCheckBoxColumn Header="محلول" Binding="{Binding IsResolved}" Width="80"/>
+              </DataGrid.Columns>
+            </DataGrid>
+
+            <StackPanel Grid.Row="4" Orientation="Horizontal">
+              <Button Style="{StaticResource DangerButton}" Content="تعليم التعارض كمحلول" Command="{Binding ResolveConflictCommand}"/>
+              <TextBlock Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="10,0"/>
+            </StackPanel>
+          </Grid>
+        </TabItem>
       </TabControl>
     </DataTemplate>
 
