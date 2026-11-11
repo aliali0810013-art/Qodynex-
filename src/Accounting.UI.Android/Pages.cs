@@ -528,9 +528,15 @@ public sealed class SalePage : ContentPage
             };
             foreach (var option in unitOptions) row.UnitOptions.Add(option);
             row.SelectedUnit = defaultUnit;
-            row.PropertyChanged += (_, args) =>
+            row.PropertyChanged += async (_, args) =>
             {
-                if (args.PropertyName is nameof(MobileSaleLineViewModel.Quantity) or nameof(MobileSaleLineViewModel.UnitPrice) or nameof(MobileSaleLineViewModel.Total))
+                if (args.PropertyName == nameof(MobileSaleLineViewModel.SelectedUnit) && row.SelectedUnit is not null)
+                {
+                    try { row.UnitPrice = await _runtime.Facade.GetSuggestedUnitPriceAsync(_moduleKey, row.ItemId, row.SelectedUnit.BaseUnitsPerUnit, row.UnitPrice).ConfigureAwait(true); }
+                    catch (Exception ex) { _status.Text = ex.Message; }
+                }
+                if (args.PropertyName is nameof(MobileSaleLineViewModel.Quantity) or nameof(MobileSaleLineViewModel.UnitPrice)
+                    or nameof(MobileSaleLineViewModel.Discount) or nameof(MobileSaleLineViewModel.Total) or nameof(MobileSaleLineViewModel.SelectedUnit))
                     Recalculate();
             };
             _lines.Add(row);
