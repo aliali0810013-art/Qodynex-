@@ -89,6 +89,16 @@ public sealed partial class WindowsAccountingFacade
     }
 }
 
+public static class CompanySettingsImageHelper
+{
+    public static ImageSource? ToImage(byte[]? bytes)
+    {
+        if(bytes is null||bytes.Length==0)return null;
+        var b=new BitmapImage(); using var ms=new MemoryStream(bytes);
+        b.BeginInit(); b.CacheOption=BitmapCacheOption.OnLoad; b.StreamSource=ms; b.EndInit(); b.Freeze(); return b;
+    }
+}
+
 public sealed class CompanySettingsViewModel : ObservableObject, IWorkspaceActionTarget
 {
     private readonly WindowsAccountingFacade _facade;
