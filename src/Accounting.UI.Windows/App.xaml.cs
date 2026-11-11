@@ -205,8 +205,25 @@ public partial class App : System.Windows.Application
         }
         catch (Exception ex)
         {
-            if (e.Args.Any(x => string.Equals(x, "--cold-start-check", StringComparison.OrdinalIgnoreCase)))
+            var smokeMode = e.Args.Any(x =>
+                string.Equals(x, "--cold-start-check", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x, "--ui-tour-check", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x, "--legacy-db-smoke", StringComparison.OrdinalIgnoreCase));
+
+            if (smokeMode)
             {
+                RuntimeErrorHub.Report(ex, "CI smoke startup failure", notify: false);
+                try
+                {
+                    var failurePath = Environment.GetEnvironmentVariable("QODYNEX_SMOKE_FAILURE_PATH");
+                    if (!string.IsNullOrWhiteSpace(failurePath))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(failurePath) ?? Environment.CurrentDirectory);
+                        File.WriteAllText(failurePath, ex.ToString());
+                    }
+                }
+                catch { }
+
                 System.Diagnostics.Debug.WriteLine(ex);
                 Shutdown(1);
                 return;
