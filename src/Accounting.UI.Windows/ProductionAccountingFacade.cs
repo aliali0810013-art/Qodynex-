@@ -112,11 +112,14 @@ public sealed partial class WindowsAccountingFacade
                 var pos = await _queries.GetStockPositionAsync(_user, item.Id, warehouse, ct).ConfigureAwait(false);
                 qty = pos.QuantityOnHand; value = pos.InventoryValue; avg = pos.AverageUnitCost;
             }
-            var carton = await (from c in _db.ItemUnitConversions.AsNoTracking()
-                                join u in _db.UnitOfMeasures.AsNoTracking() on c.UnitOfMeasureId equals u.Id
-                                where c.CompanyId == _user.CompanyId && c.BranchId == _user.BranchId && c.ItemId == item.Id
-                                orderby c.BaseUnitsPerUnit descending
-                                select new { u.Name, c.BaseUnitsPerUnit }).FirstOrDefaultAsync(ct).ConfigureAwait(false);
+            var conversions = await (from conversion in _db.ItemUnitConversions.AsNoTracking()
+                                      join unit in _db.UnitOfMeasures.AsNoTracking() on conversion.UnitOfMeasureId equals unit.Id
+                                      where conversion.CompanyId == _user.CompanyId
+                                         && conversion.BranchId == _user.BranchId
+                                         && conversion.ItemId == item.Id
+                                      select new { unit.Name, conversion.BaseUnitsPerUnit })
+                .ToListAsync(ct).ConfigureAwait(false);
+            var carton = conversions.OrderByDescending(x => x.BaseUnitsPerUnit).FirstOrDefault();
             var cartonText = carton is null ? "-" : $"{qty / carton.BaseUnitsPerUnit:N2} {carton.Name} ({carton.BaseUnitsPerUnit:N2} {item.UnitName})";
             result.Add(new(item.Id, item.Sku, item.Name, item.UnitName, qty, value, avg, cartonText));
         }
