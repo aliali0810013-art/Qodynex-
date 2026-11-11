@@ -171,11 +171,26 @@ public sealed class WindowsColdStartTests
             Assert.Equal(190m,line.LineTotal);
             Assert.Equal(190m,vm.GrandTotal);
 
-            var thermal=InvoicePrintService.Build(vm,saved,true);
-            var a4=InvoicePrintService.Build(vm,saved,false);
-            Assert.NotEmpty(thermal.Blocks);
-            Assert.NotEmpty(a4.Blocks);
-            Assert.True(thermal.PageWidth < a4.PageWidth);
+            Exception? printError = null;
+            var printValidated = false;
+            var sta = new Thread(() =>
+            {
+                try
+                {
+                    var thermal=InvoicePrintService.Build(vm,saved,true);
+                    var a4=InvoicePrintService.Build(vm,saved,false);
+                    Assert.NotEmpty(thermal.Blocks);
+                    Assert.NotEmpty(a4.Blocks);
+                    Assert.True(thermal.PageWidth < a4.PageWidth);
+                    printValidated = true;
+                }
+                catch (Exception ex) { printError = ex; }
+            });
+            sta.SetApartmentState(ApartmentState.STA);
+            sta.Start();
+            sta.Join();
+            if (printError is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(printError).Throw();
+            Assert.True(printValidated);
         }
         finally { DeleteSqlite(path); }
     }
