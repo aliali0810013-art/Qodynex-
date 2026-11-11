@@ -17,7 +17,7 @@ public sealed class ProductionMobileShell : TabbedPage
         var moduleKey = runtime.EnabledModules.FirstOrDefault() ?? "RETAIL";
         Children.Add(Wrap(new SalePage(runtime, moduleKey), "البيع"));
         Children.Add(Wrap(new CollectionPage(runtime), "التحصيل"));
-        Children.Add(Wrap(new InventoryPage(runtime), "المخزون"));
+        Children.Add(Wrap(new ProductionStockPage(runtime), "المخزون"));
         Children.Add(Wrap(new StatementSyncPage(runtime), "الحساب/المزامنة"));
     }
 
@@ -138,4 +138,99 @@ public sealed class StatementSyncPage : ContentPage
         }
         catch (Exception ex) { _status.Text = ex.Message; }
     }
+
+public sealed class ProductionStockPage : ContentPage
+{
+    private readonly MobileRuntime _runtime;
+    private readonly Picker _warehouse = new() { Title = "المستودع" };
+    private readonly ObservableCollection<MobileStockCard> _rows = new();
+    private readonly Label _status = new() { TextColor = MobileTheme.Muted };
+
+    public ProductionStockPage(MobileRuntime runtime)
+    {
+        _runtime = runtime;
+        FlowDirection = FlowDirection.RightToLeft;
+        BackgroundColor = MobileTheme.Background;
+
+        var refresh = MobileTheme.Primary("تحديث المخزون");
+        refresh.Clicked += async (_, _) => await LoadAsync();
+        var lookup = new Button { Text = "باركود / استعلام صنف" };
+        lookup.Clicked += async (_, _) => await Navigation.PushAsync(new InventoryPage(_runtime));
+
+        var list = new CollectionView
+        {
+            ItemsSource = _rows,
+            SelectionMode = SelectionMode.None,
+            ItemTemplate = new DataTemplate(() =>
+            {
+                var name = new Label { FontSize = 17, FontAttributes = FontAttributes.Bold };
+                name.SetBinding(Label.TextProperty, nameof(MobileStockCard.Name));
+                var sku = new Label { FontSize = 11, TextColor = MobileTheme.Muted };
+                sku.SetBinding(Label.TextProperty, nameof(MobileStockCard.Sku));
+                var qty = new Label { FontSize = 20, FontAttributes = FontAttributes.Bold, TextColor = MobileTheme.Gold, HorizontalTextAlignment = TextAlignment.End };
+                qty.SetBinding(Label.TextProperty, new Binding(nameof(MobileStockCard.QuantityOnHand), stringFormat: "{0:N3}"));
+                var unit = new Label { FontSize = 11, TextColor = MobileTheme.Muted, HorizontalTextAlignment = TextAlignment.End };
+                unit.SetBinding(Label.TextProperty, nameof(MobileStockCard.UnitName));
+                var avg = new Label { FontSize = 12, TextColor = MobileTheme.Muted };
+                avg.SetBinding(Label.TextProperty, new Binding(nameof(MobileStockCard.AverageUnitCost), stringFormat: "متوسط التكلفة {0:N2}"));
+                var value = new Label { FontSize = 12, TextColor = MobileTheme.Muted, HorizontalTextAlignment = TextAlignment.End };
+                value.SetBinding(Label.TextProperty, new Binding(nameof(MobileStockCard.InventoryValue), stringFormat: "القيمة {0:N2}"));
+                return MobileTheme.CardView(new Grid
+                {
+                    ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(new GridLength(130)) },
+                    RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto) },
+                    Children =
+                    {
+                        new VerticalStackLayout { Spacing = 2, Children = { name, sku } },
+                        new VerticalStackLayout { Spacing = 2, Children = { qty, unit } }.Position(1,0),
+                        avg.Position(0,1), value.Position(1,1)
+                    }
+                });
+            })
+        };
+
+        Content = new Grid
+        {
+            Padding = new Thickness(14,18),
+            RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Star), new RowDefinition(GridLength.Auto) },
+            Children =
+            {
+                new VerticalStackLayout { Spacing = 4, Children = { new Label { Text = "المخزون والأصناف", FontSize = 25, FontAttributes = FontAttributes.Bold }, new Label { Text = "أرصدة فعلية من دفتر المخزون المحلي", TextColor = MobileTheme.Muted } } },
+                MobileTheme.CardView(new Grid
+                {
+                    ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto) },
+                    Children = { _warehouse, new HorizontalStackLayout { Children = { refresh, lookup } }.Position(1,0) }
+                }).Position(0,1),
+                list.Position(0,2),
+                _status.Position(0,3)
+            }
+        };
+
+        _warehouse.SelectedIndexChanged += async (_, _) => await LoadAsync();
+        Appearing += async (_, _) =>
+        {
+            if (_warehouse.ItemsSource is null)
+            {
+                var warehouses = await _runtime.Facade.GetWarehousesAsync().ConfigureAwait(true);
+                _warehouse.ItemsSource = warehouses;
+                _warehouse.ItemDisplayBinding = new Binding(nameof(MobileWarehouse.Name));
+                if (warehouses.Count > 0) _warehouse.SelectedIndex = 0;
+            }
+            await LoadAsync();
+        };
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            if (_warehouse.SelectedItem is not MobileWarehouse warehouse) return;
+            var rows = await _runtime.Facade.GetStockCardsAsync(warehouse.Id).ConfigureAwait(true);
+            _rows.Clear(); foreach (var row in rows) _rows.Add(row);
+            _status.Text = $"{_rows.Count} صنف • {DateTime.Now:HH:mm}";
+        }
+        catch (Exception ex) { _status.Text = ex.Message; }
+    }
+}
+
 }
