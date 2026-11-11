@@ -47,7 +47,6 @@
   </Style>
   <Style TargetType="TextBlock">
     <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-    <Setter Property="LineHeight" Value="20"/>
   </Style>
   <Style TargetType="Label"><Setter Property="Foreground" Value="{StaticResource TextBrush}"/></Style>
 
