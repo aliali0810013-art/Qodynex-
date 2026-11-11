@@ -45,6 +45,10 @@ public sealed class AndroidColdStartTests
             Assert.NotNull(inventory);
             Assert.NotNull(inventory!.Position);
             Assert.True(inventory.Position!.QuantityOnHand > 0m);
+
+            var stockCards = await facade.GetStockCardsAsync(seed.WarehouseId);
+            Assert.Equal(5, stockCards.Count);
+            Assert.All(stockCards, row => Assert.True(row.QuantityOnHand > 0m));
         }
         finally
         {
