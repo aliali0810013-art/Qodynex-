@@ -193,6 +193,39 @@ public static class InvoicePrintService
         if(!string.IsNullOrWhiteSpace(brand.FooterNotes))doc.Blocks.Add(new Paragraph(new Run(brand.FooterNotes)){TextAlignment=TextAlignment.Center,FontSize=10});
         return doc;
     }
+    public static FlowDocument BuildVoucher(VoucherEditorViewModel vm, CompanyBrandingSnapshot brand, bool thermal)
+    {
+        var doc=new FlowDocument{FlowDirection=FlowDirection.RightToLeft,FontFamily=new FontFamily("Segoe UI"),Foreground=Brushes.Black,Background=Brushes.White,
+            PagePadding=thermal?new Thickness(14):new Thickness(42),ColumnGap=0};
+        if(thermal){doc.PageWidth=302;doc.PageHeight=900;doc.ColumnWidth=274;}
+        else{doc.PageWidth=794;doc.PageHeight=1123;doc.ColumnWidth=710;}
+
+        if(thermal)
+        {
+            var h=new Paragraph{TextAlignment=TextAlignment.Center};
+            if(brand.LogoBytes is {Length:>0}){h.Inlines.Add(new InlineUIContainer(new Image{Source=ToImage(brand.LogoBytes),Height=54,Stretch=Stretch.Uniform}));h.Inlines.Add(new LineBreak());}
+            h.Inlines.Add(new Bold(new Run(brand.ArabicName)){FontSize=18});h.Inlines.Add(new LineBreak());h.Inlines.Add(new Run($"{brand.City} • {brand.Phones}"){FontSize=10});doc.Blocks.Add(h);
+        }
+        else
+        {
+            var header=new Grid{Margin=new Thickness(0,0,0,14)};
+            header.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Star});header.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(170)});header.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Star});
+            var company=new TextBlock{Text=$"{brand.ArabicName}\n{brand.BusinessDescription}",FontSize=15,FontWeight=FontWeights.Bold,TextAlignment=TextAlignment.Right,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};Grid.SetColumn(company,0);header.Children.Add(company);
+            if(brand.LogoBytes is {Length:>0}){var img=new Image{Source=ToImage(brand.LogoBytes),Height=80,Stretch=Stretch.Uniform};Grid.SetColumn(img,1);header.Children.Add(img);}
+            var info=new TextBlock{Text=$"{brand.City}\n{brand.Address}\n{brand.Phones}\n{brand.Email}\nالرقم الضريبي: {brand.TaxNumber}",FontSize=10,TextAlignment=TextAlignment.Left,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};Grid.SetColumn(info,2);header.Children.Add(info);
+            doc.Blocks.Add(new BlockUIContainer(header));
+        }
+        var title=new Paragraph{TextAlignment=TextAlignment.Center,Margin=new Thickness(0,8,0,16)};
+        title.Inlines.Add(new Bold(new Run(vm.Title)){FontSize=thermal?18:24});title.Inlines.Add(new LineBreak());
+        title.Inlines.Add(new Run($"رقم: {vm.VoucherDocumentNumber}   |   التاريخ: {vm.VoucherDocumentDate:yyyy-MM-dd HH:mm}"){FontSize=thermal?9:11});doc.Blocks.Add(title);
+        var party=vm.SelectedVoucherPartner?.Name ?? "-";
+        doc.Blocks.Add(new Paragraph(new Run($"الطرف: {party}\nالبيان: {vm.Description}\nالمبلغ: {vm.Amount:N2} {brand.CurrencySymbol}")){FontSize=thermal?12:16,Margin=new Thickness(0,12,0,12)});
+        if(!thermal)doc.Blocks.Add(new Paragraph(new Run("توقيع المحاسب: ____________________     توقيع المستلم/المستفيد: ____________________")){Margin=new Thickness(0,28,0,12)});
+        doc.Blocks.Add(BuildQrBlock($"{brand.ArabicName}|{vm.Title}|{vm.VoucherDocumentNumber}|{vm.VoucherDocumentDate:O}|{vm.Amount:N2}|{brand.TaxNumber}",thermal));
+        if(!string.IsNullOrWhiteSpace(brand.FooterNotes))doc.Blocks.Add(new Paragraph(new Run(brand.FooterNotes)){TextAlignment=TextAlignment.Center,FontSize=10});
+        return doc;
+    }
+
     private static TableCell Cell(string s,bool bold=false){var p=new Paragraph(new Run(s)){Margin=new Thickness(3),Padding=new Thickness(2)};if(bold)p.FontWeight=FontWeights.Bold;return new TableCell(p){BorderBrush=Brushes.Gray,BorderThickness=new Thickness(.5)};}
     private static Block BuildQrBlock(string payload,bool thermal)
     {
