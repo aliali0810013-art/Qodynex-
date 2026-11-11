@@ -64,6 +64,56 @@ public sealed class WindowsColdStartTests
             Assert.Equal("YER", (await facade.GetPolicyAsync()).BaseCurrencyCode);
             Assert.True((await facade.GetStockPositionAsync(seed.ItemIds[0], seed.WarehouseId)).QuantityOnHand > 0m);
             Assert.NotEmpty(await facade.GetTrialBalanceAsync());
+
+            // Production UI/UX facade coverage for the seven Windows workspaces.
+            var dashboard = await facade.GetDashboardAsync();
+            Assert.Equal(5, dashboard.ItemCount);
+            Assert.NotEmpty(dashboard.RecentJournals);
+
+            var warehouses = await facade.GetWarehousesAsync();
+            Assert.Single(warehouses);
+            Assert.Equal(5, (await facade.GetInventoryGridAsync(seed.WarehouseId)).Count);
+            Assert.NotEmpty(await facade.GetAccountTreeAsync());
+            Assert.NotEmpty(await facade.GetRecentJournalsAsync());
+            Assert.Empty(await facade.GetVoucherHistoryAsync());
+
+            var syncCenter = await facade.GetSyncCenterAsync();
+            Assert.NotNull(syncCenter);
+
+            // ViewModel construction/refresh smoke coverage uses the real SQLite facade.
+            var opened = new List<object>();
+            void OpenTab(string key, string title, object vm) => opened.Add(vm);
+
+            var dashboardVm = new DashboardViewModel(facade, OpenTab);
+            await dashboardVm.RefreshAsync();
+            Assert.Equal(5, dashboardVm.ItemCount);
+
+            var vouchersVm = new VouchersWorkspaceViewModel(facade, OpenTab);
+            await vouchersVm.RefreshAsync();
+            Assert.Empty(vouchersVm.Rows);
+
+            var accountsVm = new AccountsWorkspaceViewModel(facade);
+            await accountsVm.RefreshAsync();
+            Assert.NotEmpty(accountsVm.Accounts);
+            Assert.NotEmpty(accountsVm.TrialBalance);
+
+            var reportsVm = new ReportsSyncViewModel(facade, syncStore, user);
+            await reportsVm.RefreshAsync();
+            Assert.NotEmpty(reportsVm.TrialBalance);
+
+            var inventoryVm = new InventoryWorkspaceViewModel(facade, OpenTab);
+            await Task.Delay(100);
+            await inventoryVm.RefreshAsync();
+            Assert.Equal(5, inventoryVm.Rows.Count);
+
+            var salesVm = new InvoiceEditorViewModel(facade, OpenTab, true, RetailModule.ModuleKey);
+            var purchaseVm = new InvoiceEditorViewModel(facade, OpenTab, false, RetailModule.ModuleKey);
+            var receiptVm = new VoucherEditorViewModel(facade, OpenTab, true);
+            await Task.Delay(100);
+            Assert.NotEmpty(salesVm.Warehouses);
+            Assert.NotEmpty(salesVm.SettlementAccounts);
+            Assert.NotEmpty(purchaseVm.Warehouses);
+            Assert.NotEmpty(receiptVm.VoucherAccounts);
         }
         finally
         {
