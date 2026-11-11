@@ -73,7 +73,7 @@ public sealed partial class WindowsAccountingFacade
             row.FooterNotes=value.FooterNotes.Trim(); row.CurrencyCode=value.CurrencyCode.Trim().ToUpperInvariant();
             row.CurrencySymbol=string.IsNullOrWhiteSpace(value.CurrencySymbol)?row.CurrencyCode:value.CurrencySymbol.Trim();
             row.TaxEnabled=value.TaxEnabled; row.TaxRate=value.TaxRate; row.AllowNegativeStock=value.AllowNegativeStock;
-            row.DarkThemeEnabled=value.DarkThemeEnabled; row.UpdatedAtUtcTicks=DateTimeOffset.UtcNow.UtcTicks;
+            row.DarkThemeEnabled=value.DarkThemeEnabled; row.UpdatedAtUtcTicks=DateTimeOffset.UtcNow.UtcDateTime.Ticks;
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
             await tx.CommitAsync(ct).ConfigureAwait(false);
         }
