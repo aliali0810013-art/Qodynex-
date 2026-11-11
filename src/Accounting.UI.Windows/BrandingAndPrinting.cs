@@ -150,6 +150,157 @@ public sealed class CompanySettingsViewModel : ObservableObject, IWorkspaceActio
     public Task SaveAndPostAsync()=>SaveAsync(); public Task QuickSearchAsync()=>RefreshAsync(); public Task OpenSelectedDetailsAsync()=>RefreshAsync();
 }
 
+public static class ReportPrintService
+{
+    public static FlowDocument BuildVoucher(VoucherHistoryRow row, CompanyBrandingSnapshot brand, bool thermal)
+    {
+        var doc = CreateDocument(thermal);
+        AddHeader(doc, brand, thermal);
+        var title = new Paragraph { TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 8, 0, 16) };
+        title.Inlines.Add(new Bold(new Run(row.Kind)) { FontSize = thermal ? 18 : 24 });
+        title.Inlines.Add(new LineBreak());
+        title.Inlines.Add(new Run($"رقم: {(row.OfficialNumber == "-" ? row.LocalNumber : row.OfficialNumber)}   |   التاريخ: {row.DateUtc:yyyy-MM-dd HH:mm}") { FontSize = thermal ? 9 : 11 });
+        doc.Blocks.Add(title);
+        doc.Blocks.Add(new Paragraph(new Run($"الطرف: {row.PartnerName}\nالبيان: {row.Description}\nالمبلغ: {row.Amount:N2} {brand.CurrencySymbol}"))
+        {
+            FontSize = thermal ? 12 : 16,
+            Margin = new Thickness(0, 12, 0, 12)
+        });
+        if (!thermal)
+            doc.Blocks.Add(new Paragraph(new Run("توقيع المحاسب: ____________________     توقيع المستلم/المستفيد: ____________________"))
+            { Margin = new Thickness(0, 28, 0, 12) });
+        if (!string.IsNullOrWhiteSpace(brand.FooterNotes))
+            doc.Blocks.Add(new Paragraph(new Run(brand.FooterNotes)) { TextAlignment = TextAlignment.Center, FontSize = 10 });
+        return doc;
+    }
+
+    public static FlowDocument BuildStatement(
+        string title,
+        IEnumerable<LedgerRow> rows,
+        CompanyBrandingSnapshot brand,
+        DateTime? from,
+        DateTime? to)
+    {
+        var doc = CreateDocument(false);
+        AddHeader(doc, brand, false);
+        var heading = new Paragraph { TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 8, 0, 14) };
+        heading.Inlines.Add(new Bold(new Run($"كشف حساب — {title}")) { FontSize = 22 });
+        heading.Inlines.Add(new LineBreak());
+        heading.Inlines.Add(new Run($"الفترة: {(from?.ToString("yyyy-MM-dd") ?? "البداية")} إلى {(to?.ToString("yyyy-MM-dd") ?? "اليوم")}"));
+        doc.Blocks.Add(heading);
+
+        var table = new Table { CellSpacing = 0 };
+        foreach (var width in new[] { 95d, 115d, 230d, 90d, 90d, 100d })
+            table.Columns.Add(new TableColumn { Width = new GridLength(width) });
+        var group = new TableRowGroup();
+        table.RowGroups.Add(group);
+        var header = new TableRow();
+        foreach (var text in new[] { "التاريخ", "المرجع", "البيان", "مدين", "دائن", "الرصيد" })
+            header.Cells.Add(Cell(text, true));
+        group.Rows.Add(header);
+
+        foreach (var row in rows)
+        {
+            var line = new TableRow();
+            line.Cells.Add(Cell(row.DateUtc.ToLocalTime().ToString("yyyy-MM-dd")));
+            line.Cells.Add(Cell(row.Reference));
+            line.Cells.Add(Cell(row.Description));
+            line.Cells.Add(Cell(row.Debit.ToString("N2")));
+            line.Cells.Add(Cell(row.Credit.ToString("N2")));
+            line.Cells.Add(Cell(row.RunningBalance.ToString("N2")));
+            group.Rows.Add(line);
+        }
+        doc.Blocks.Add(table);
+        return doc;
+    }
+
+    public static FlowDocument BuildTrialBalance(
+        IEnumerable<TrialBalanceRow> rows,
+        CompanyBrandingSnapshot brand)
+    {
+        var values = rows.ToArray();
+        var doc = CreateDocument(false);
+        AddHeader(doc, brand, false);
+        doc.Blocks.Add(new Paragraph(new Bold(new Run("ميزان المراجعة")))
+        {
+            TextAlignment = TextAlignment.Center,
+            FontSize = 24,
+            Margin = new Thickness(0, 10, 0, 14)
+        });
+
+        var table = new Table { CellSpacing = 0 };
+        foreach (var width in new[] { 110d, 260d, 120d, 120d, 120d })
+            table.Columns.Add(new TableColumn { Width = new GridLength(width) });
+        var group = new TableRowGroup();
+        table.RowGroups.Add(group);
+        var header = new TableRow();
+        foreach (var text in new[] { "الكود", "الحساب", "مدين", "دائن", "الرصيد" })
+            header.Cells.Add(Cell(text, true));
+        group.Rows.Add(header);
+        foreach (var row in values)
+        {
+            var line = new TableRow();
+            line.Cells.Add(Cell(row.Code));
+            line.Cells.Add(Cell(row.Name));
+            line.Cells.Add(Cell(row.Debit.ToString("N2")));
+            line.Cells.Add(Cell(row.Credit.ToString("N2")));
+            line.Cells.Add(Cell(row.Balance.ToString("N2")));
+            group.Rows.Add(line);
+        }
+        doc.Blocks.Add(table);
+        doc.Blocks.Add(new Paragraph(new Bold(new Run(
+            $"الإجمالي المدين: {values.Sum(x => x.Debit):N2}     الإجمالي الدائن: {values.Sum(x => x.Credit):N2}")))
+        { Margin = new Thickness(0, 14, 0, 0) });
+        return doc;
+    }
+
+    private static FlowDocument CreateDocument(bool thermal)
+    {
+        var doc = new FlowDocument
+        {
+            FlowDirection = FlowDirection.RightToLeft,
+            FontFamily = new FontFamily("Segoe UI"),
+            Foreground = Brushes.Black,
+            Background = Brushes.White,
+            PagePadding = thermal ? new Thickness(14) : new Thickness(42),
+            ColumnGap = 0
+        };
+        if (thermal) { doc.PageWidth = 302; doc.PageHeight = 900; doc.ColumnWidth = 274; }
+        else { doc.PageWidth = 794; doc.PageHeight = 1123; doc.ColumnWidth = 710; }
+        return doc;
+    }
+
+    private static void AddHeader(FlowDocument doc, CompanyBrandingSnapshot brand, bool thermal)
+    {
+        var header = new Paragraph { TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 0, 0, 10) };
+        if (brand.LogoBytes is { Length: > 0 })
+        {
+            header.Inlines.Add(new InlineUIContainer(new Image
+            {
+                Source = CompanySettingsImageHelper.ToImage(brand.LogoBytes),
+                Height = thermal ? 50 : 70,
+                Stretch = Stretch.Uniform
+            }));
+            header.Inlines.Add(new LineBreak());
+        }
+        header.Inlines.Add(new Bold(new Run(brand.ArabicName)) { FontSize = thermal ? 17 : 20 });
+        header.Inlines.Add(new LineBreak());
+        header.Inlines.Add(new Run($"{brand.City} • {brand.Phones} • {brand.TaxNumber}") { FontSize = 10 });
+        doc.Blocks.Add(header);
+    }
+
+    private static TableCell Cell(string text, bool bold = false)
+    {
+        var paragraph = new Paragraph(new Run(text ?? string.Empty))
+        {
+            Margin = new Thickness(2),
+            Padding = new Thickness(2)
+        };
+        if (bold) paragraph.FontWeight = FontWeights.Bold;
+        return new TableCell(paragraph) { BorderBrush = Brushes.Gray, BorderThickness = new Thickness(.5) };
+    }
+}
+
 public static class InvoicePrintService
 {
     public static FlowDocument Build(InvoiceEditorViewModel vm, CompanyBrandingSnapshot brand, bool thermal)

@@ -336,19 +336,74 @@ public sealed class InventoryWorkspaceViewModel : ObservableObject, IWorkspaceAc
 
 public sealed class VouchersWorkspaceViewModel : ObservableObject, IWorkspaceActionTarget
 {
-    private readonly WindowsAccountingFacade _facade; private readonly Action<string,string,object> _open; private string _status="جاهز";
+    private readonly WindowsAccountingFacade _facade;
+    private readonly Action<string,string,object> _open;
+    private string _status="جاهز";
+    private VoucherHistoryRow? _selected;
+
     public ObservableCollection<VoucherHistoryRow> Rows { get; }=new();
+    public VoucherHistoryRow? Selected { get=>_selected; set { if(Set(ref _selected,value)){ReverseCommand.Refresh();Print80Command.Refresh();PrintA4Command.Refresh();} } }
     public string Status { get=>_status; private set=>Set(ref _status,value); }
-    public RelayCommand NewReceiptCommand { get; } public RelayCommand NewPaymentCommand { get; }
+
+    public RelayCommand NewReceiptCommand { get; }
+    public RelayCommand NewPaymentCommand { get; }
+    public AsyncRelayCommand ReverseCommand { get; }
+    public AsyncRelayCommand Print80Command { get; }
+    public AsyncRelayCommand PrintA4Command { get; }
+
     public VouchersWorkspaceViewModel(WindowsAccountingFacade facade,Action<string,string,object> open)
     {
-        _facade=facade; _open=open;
+        _facade=facade;
+        _open=open;
         NewReceiptCommand=new RelayCommand(()=>_open("receipt","سند قبض",new VoucherEditorViewModel(_facade,_open,true)));
         NewPaymentCommand=new RelayCommand(()=>_open("payment","سند صرف",new VoucherEditorViewModel(_facade,_open,false)));
+        ReverseCommand=new AsyncRelayCommand(ReverseAsync,()=>Selected is not null);
+        Print80Command=new AsyncRelayCommand(()=>PrintAsync(true),()=>Selected is not null);
+        PrintA4Command=new AsyncRelayCommand(()=>PrintAsync(false),()=>Selected is not null);
         _=RefreshAsync();
     }
-    public async Task RefreshAsync(){try{Rows.Clear();foreach(var x in await _facade.GetVoucherHistoryAsync().ConfigureAwait(true))Rows.Add(x);Status=$"{Rows.Count} سند مرحّل";}catch(Exception ex){Status=ex.Message;}}
-    public Task SaveAndPostAsync()=>RefreshAsync(); public Task QuickSearchAsync()=>RefreshAsync(); public Task OpenSelectedDetailsAsync()=>RefreshAsync();
+
+    public async Task RefreshAsync()
+    {
+        try
+        {
+            Rows.Clear();
+            foreach(var x in await _facade.GetVoucherHistoryAsync().ConfigureAwait(true))Rows.Add(x);
+            if(Selected is null)Selected=Rows.FirstOrDefault();
+            Status=$"{Rows.Count} سند مرحّل";
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+
+    private async Task PrintAsync(bool thermal)
+    {
+        try
+        {
+            if(Selected is null)throw new InvalidOperationException("حدد سنداً أولاً.");
+            var brand=await _facade.GetBrandingAsync().ConfigureAwait(true);
+            var doc=ReportPrintService.BuildVoucher(Selected,brand,thermal);
+            InvoicePrintService.Preview(doc,$"{Selected.Kind} — {(thermal?"80mm":"A4")}");
+            Status="تم فتح معاينة السند.";
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+
+    private async Task ReverseAsync()
+    {
+        try
+        {
+            if(Selected is null)throw new InvalidOperationException("حدد سنداً أولاً.");
+            var result=await _facade.ReverseDocumentAsync(Selected.Id).ConfigureAwait(true);
+            Status=$"تم إنشاء عكس محاسبي للسند: {result.OperationId:N}";
+            Selected=null;
+            await RefreshAsync().ConfigureAwait(true);
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+
+    public Task SaveAndPostAsync()=>RefreshAsync();
+    public Task QuickSearchAsync()=>RefreshAsync();
+    public Task OpenSelectedDetailsAsync()=>Selected is null?Task.CompletedTask:PrintAsync(false);
 }
 
 public sealed class ManualJournalLineViewModel : ObservableObject
@@ -456,6 +511,7 @@ public sealed class ReportsSyncViewModel : ObservableObject, IWorkspaceActionTar
     private PartnerLookup? _selectedPartner;
     private ConflictUiRow? _selectedConflict;
     private string _partnerBalance="-",_syncSummary="-",_status="جاهز",_serverUrl="";
+    private DateTime? _dateFrom=new DateTime(DateTime.Today.Year,DateTime.Today.Month,1),_dateTo=DateTime.Today;
 
     public ObservableCollection<PartnerLookup> Partners { get; }=new();
     public ObservableCollection<LedgerRow> StatementRows { get; }=new();
@@ -469,6 +525,8 @@ public sealed class ReportsSyncViewModel : ObservableObject, IWorkspaceActionTar
     public string SyncSummary { get=>_syncSummary; private set=>Set(ref _syncSummary,value); }
     public string Status { get=>_status; private set=>Set(ref _status,value); }
     public string ServerUrl { get=>_serverUrl; set=>Set(ref _serverUrl,value); }
+    public DateTime? DateFrom { get=>_dateFrom; set=>Set(ref _dateFrom,value); }
+    public DateTime? DateTo { get=>_dateTo; set=>Set(ref _dateTo,value); }
 
     public AsyncRelayCommand LoadStatementCommand { get; }
     public AsyncRelayCommand RefreshCommand { get; }
@@ -477,6 +535,8 @@ public sealed class ReportsSyncViewModel : ObservableObject, IWorkspaceActionTar
     public AsyncRelayCommand RestoreCommand { get; }
     public AsyncRelayCommand IntegrityCommand { get; }
     public AsyncRelayCommand SaveServerUrlCommand { get; }
+    public AsyncRelayCommand PrintStatementCommand { get; }
+    public AsyncRelayCommand PrintTrialBalanceCommand { get; }
 
     public ReportsSyncViewModel(WindowsAccountingFacade facade,LocalSyncStore syncStore,UserContext user)
     {
@@ -490,6 +550,8 @@ public sealed class ReportsSyncViewModel : ObservableObject, IWorkspaceActionTar
         RestoreCommand=new AsyncRelayCommand(RestoreAsync);
         IntegrityCommand=new AsyncRelayCommand(CheckIntegrityAsync);
         SaveServerUrlCommand=new AsyncRelayCommand(SaveServerUrlAsync);
+        PrintStatementCommand=new AsyncRelayCommand(PrintStatementAsync);
+        PrintTrialBalanceCommand=new AsyncRelayCommand(PrintTrialBalanceAsync);
         _=RefreshAsync();
     }
 
@@ -527,10 +589,47 @@ public sealed class ReportsSyncViewModel : ObservableObject, IWorkspaceActionTar
         try
         {
             if(SelectedPartner is null)throw new InvalidOperationException("حدد العميل/المورد.");
+            if(DateFrom.HasValue&&DateTo.HasValue&&DateFrom.Value.Date>DateTo.Value.Date)
+                throw new InvalidOperationException("تاريخ البداية يجب ألا يكون بعد تاريخ النهاية.");
             var x=await _facade.GetPartnerStatementAsync(SelectedPartner.Id).ConfigureAwait(true);
+            var from=DateFrom?.Date;
+            var toExclusive=DateTo?.Date.AddDays(1);
+            var filtered=x.Rows.Where(row=>
+                    (!from.HasValue||row.DateUtc.ToLocalTime().Date>=from.Value)
+                    &&(!toExclusive.HasValue||row.DateUtc.ToLocalTime()<toExclusive.Value))
+                .ToArray();
             StatementRows.Clear();
-            foreach(var row in x.Rows)StatementRows.Add(row);
-            PartnerBalance=$"{x.PartnerName} — الرصيد {x.Balance:N2}";
+            foreach(var row in filtered)StatementRows.Add(row);
+            var balance=filtered.LastOrDefault()?.RunningBalance
+                        ?? x.Rows.LastOrDefault(row=>!from.HasValue||row.DateUtc.ToLocalTime().Date<from.Value)?.RunningBalance
+                        ?? 0m;
+            PartnerBalance=$"{x.PartnerName} — الرصيد {balance:N2}";
+            Status=$"تم تحميل {filtered.Length} حركة ضمن الفترة المحددة.";
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+
+    private async Task PrintStatementAsync()
+    {
+        try
+        {
+            if(SelectedPartner is null)throw new InvalidOperationException("حدد العميل/المورد.");
+            if(StatementRows.Count==0)await LoadStatementAsync().ConfigureAwait(true);
+            var brand=await _facade.GetBrandingAsync().ConfigureAwait(true);
+            var doc=ReportPrintService.BuildStatement(SelectedPartner.Name,StatementRows,brand,DateFrom,DateTo);
+            InvoicePrintService.Preview(doc,$"كشف حساب — {SelectedPartner.Name}");
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+
+    private async Task PrintTrialBalanceAsync()
+    {
+        try
+        {
+            if(TrialBalance.Count==0)await RefreshAsync().ConfigureAwait(true);
+            var brand=await _facade.GetBrandingAsync().ConfigureAwait(true);
+            var doc=ReportPrintService.BuildTrialBalance(TrialBalance,brand);
+            InvoicePrintService.Preview(doc,"ميزان المراجعة");
         }
         catch(Exception ex){Status=ex.Message;}
     }

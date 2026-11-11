@@ -193,20 +193,34 @@
     </DataTemplate>
 
     <DataTemplate DataType="{x:Type vm:VouchersWorkspaceViewModel}">
-      <Grid Margin="16"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-        <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-          <TextBlock Text="السندات المالية" FontSize="28" FontWeight="Bold"/>
-          <StackPanel Grid.Column="1" Orientation="Horizontal"><Button Style="{StaticResource PrimaryButton}" Content="+ سند قبض" Command="{Binding NewReceiptCommand}"/><Button Content="+ سند صرف" Command="{Binding NewPaymentCommand}"/></StackPanel>
+      <Grid Margin="16">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid>
+          <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <StackPanel>
+            <TextBlock Text="السندات المالية" FontSize="28" FontWeight="Bold"/>
+            <TextBlock Text="سجل السندات المرحلة مع الطباعة والعكس المحاسبي" Foreground="{StaticResource MutedBrush}"/>
+          </StackPanel>
+          <WrapPanel Grid.Column="1">
+            <Button Style="{StaticResource PrimaryButton}" Content="سند قبض جديد" Command="{Binding NewReceiptCommand}"/>
+            <Button Content="سند صرف جديد" Command="{Binding NewPaymentCommand}"/>
+            <Button Content="طباعة 80mm" Command="{Binding Print80Command}"/>
+            <Button Content="طباعة A4" Command="{Binding PrintA4Command}"/>
+            <Button Style="{StaticResource DangerButton}" Content="عكس السند المحدد" Command="{Binding ReverseCommand}"/>
+          </WrapPanel>
         </Grid>
-        <DataGrid Grid.Row="1" ItemsSource="{Binding Rows}">
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected}" IsReadOnly="True">
           <DataGrid.Columns>
-            <DataGridTextColumn Header="النوع" Binding="{Binding Kind}" Width="110"/><DataGridTextColumn Header="الرقم المؤقت" Binding="{Binding LocalNumber}" Width="150"/>
-            <DataGridTextColumn Header="الرقم الرسمي" Binding="{Binding OfficialNumber}" Width="150"/><DataGridTextColumn Header="التاريخ" Binding="{Binding DateUtc, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="170"/>
-            <DataGridTextColumn Header="الطرف" Binding="{Binding PartnerName}" Width="180"/><DataGridTextColumn Header="المبلغ" Binding="{Binding Amount, StringFormat={}{0:N2}}" Width="140"/>
+            <DataGridTextColumn Header="النوع" Binding="{Binding Kind}" Width="110"/>
+            <DataGridTextColumn Header="الرقم المؤقت" Binding="{Binding LocalNumber}" Width="150"/>
+            <DataGridTextColumn Header="الرقم الرسمي" Binding="{Binding OfficialNumber}" Width="150"/>
+            <DataGridTextColumn Header="التاريخ" Binding="{Binding DateUtc,StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="170"/>
+            <DataGridTextColumn Header="الطرف" Binding="{Binding PartnerName}" Width="180"/>
+            <DataGridTextColumn Header="المبلغ" Binding="{Binding Amount,StringFormat={}{0:N2}}" Width="140"/>
             <DataGridTextColumn Header="البيان" Binding="{Binding Description}" Width="*"/>
           </DataGrid.Columns>
         </DataGrid>
-        <TextBlock Grid.Row="2" Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" Margin="6"/>
+        <TextBlock Grid.Row="2" Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="6"/>
       </Grid>
     </DataTemplate>
 
@@ -305,34 +319,46 @@
         <TabItem Header="كشف حساب">
           <Grid Margin="8">
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-            <StackPanel Orientation="Horizontal">
-              <ComboBox Width="360" ItemsSource="{Binding Partners}" SelectedItem="{Binding SelectedPartner}" DisplayMemberPath="Name"/>
+            <WrapPanel>
+              <ComboBox Width="300" ItemsSource="{Binding Partners}" SelectedItem="{Binding SelectedPartner}" DisplayMemberPath="Name"/>
+              <TextBlock Text="من" VerticalAlignment="Center" Margin="8,0,2,0"/>
+              <DatePicker SelectedDate="{Binding DateFrom}" Width="135" Margin="4"/>
+              <TextBlock Text="إلى" VerticalAlignment="Center" Margin="8,0,2,0"/>
+              <DatePicker SelectedDate="{Binding DateTo}" Width="135" Margin="4"/>
               <Button Style="{StaticResource PrimaryButton}" Content="عرض كشف الحساب" Command="{Binding LoadStatementCommand}"/>
-            </StackPanel>
+              <Button Content="طباعة كشف الحساب A4" Command="{Binding PrintStatementCommand}"/>
+            </WrapPanel>
             <TextBlock Grid.Row="1" Text="{Binding PartnerBalance}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource GoldBrush}" Margin="8"/>
-            <DataGrid Grid.Row="2" ItemsSource="{Binding StatementRows}">
+            <DataGrid Grid.Row="2" ItemsSource="{Binding StatementRows}" IsReadOnly="True">
               <DataGrid.Columns>
-                <DataGridTextColumn Header="التاريخ" Binding="{Binding DateUtc, StringFormat={}{0:yyyy-MM-dd}}" Width="130"/>
+                <DataGridTextColumn Header="التاريخ" Binding="{Binding DateUtc,StringFormat={}{0:yyyy-MM-dd}}" Width="130"/>
                 <DataGridTextColumn Header="المرجع" Binding="{Binding Reference}" Width="130"/>
                 <DataGridTextColumn Header="البيان" Binding="{Binding Description}" Width="*"/>
-                <DataGridTextColumn Header="مدين" Binding="{Binding Debit, StringFormat={}{0:N2}}" Width="120"/>
-                <DataGridTextColumn Header="دائن" Binding="{Binding Credit, StringFormat={}{0:N2}}" Width="120"/>
-                <DataGridTextColumn Header="الرصيد" Binding="{Binding RunningBalance, StringFormat={}{0:N2}}" Width="140"/>
+                <DataGridTextColumn Header="مدين" Binding="{Binding Debit,StringFormat={}{0:N2}}" Width="120"/>
+                <DataGridTextColumn Header="دائن" Binding="{Binding Credit,StringFormat={}{0:N2}}" Width="120"/>
+                <DataGridTextColumn Header="الرصيد" Binding="{Binding RunningBalance,StringFormat={}{0:N2}}" Width="140"/>
               </DataGrid.Columns>
             </DataGrid>
           </Grid>
         </TabItem>
 
         <TabItem Header="ميزان المراجعة">
-          <DataGrid ItemsSource="{Binding TrialBalance}">
-            <DataGrid.Columns>
-              <DataGridTextColumn Header="الكود" Binding="{Binding Code}" Width="120"/>
-              <DataGridTextColumn Header="الحساب" Binding="{Binding Name}" Width="*"/>
-              <DataGridTextColumn Header="مدين" Binding="{Binding Debit, StringFormat={}{0:N2}}" Width="150"/>
-              <DataGridTextColumn Header="دائن" Binding="{Binding Credit, StringFormat={}{0:N2}}" Width="150"/>
-              <DataGridTextColumn Header="الرصيد" Binding="{Binding Balance, StringFormat={}{0:N2}}" Width="150"/>
-            </DataGrid.Columns>
-          </DataGrid>
+          <Grid Margin="8">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+              <Button Style="{StaticResource PrimaryButton}" Content="طباعة ميزان المراجعة A4" Command="{Binding PrintTrialBalanceCommand}"/>
+              <Button Content="تحديث" Command="{Binding RefreshCommand}"/>
+            </StackPanel>
+            <DataGrid Grid.Row="1" ItemsSource="{Binding TrialBalance}" IsReadOnly="True">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="الكود" Binding="{Binding Code}" Width="120"/>
+                <DataGridTextColumn Header="الحساب" Binding="{Binding Name}" Width="*"/>
+                <DataGridTextColumn Header="مدين" Binding="{Binding Debit,StringFormat={}{0:N2}}" Width="150"/>
+                <DataGridTextColumn Header="دائن" Binding="{Binding Credit,StringFormat={}{0:N2}}" Width="150"/>
+                <DataGridTextColumn Header="الرصيد" Binding="{Binding Balance,StringFormat={}{0:N2}}" Width="150"/>
+              </DataGrid.Columns>
+            </DataGrid>
+          </Grid>
         </TabItem>
 
         <TabItem Header="النسخ الاحتياطي وسلامة الدفاتر">
