@@ -159,19 +159,37 @@ public static class InvoicePrintService
         if(thermal){doc.PageWidth=302;doc.PageHeight=1120;doc.ColumnWidth=274;}
         else{doc.PageWidth=794;doc.PageHeight=1123;doc.ColumnWidth=710;}
 
-        var title=new Paragraph{TextAlignment=TextAlignment.Center,Margin=new Thickness(0,0,0,8)};
-        if(brand.LogoBytes is {Length:>0}){var img=new Image{Source=ToImage(brand.LogoBytes),Height=thermal?54:72,Stretch=Stretch.Uniform};title.Inlines.Add(new InlineUIContainer(img));title.Inlines.Add(new LineBreak());}
-        title.Inlines.Add(new Bold(new Run(brand.ArabicName)){FontSize=thermal?18:24});
-        title.Inlines.Add(new LineBreak()); if(!string.IsNullOrWhiteSpace(brand.BusinessDescription))title.Inlines.Add(new Run(brand.BusinessDescription));
-        doc.Blocks.Add(title);
-        doc.Blocks.Add(new Paragraph(new Run(thermal?$"{brand.City} • {brand.Phones}":$"{brand.Address} | {brand.City} | {brand.Phones} | {brand.Email}")){TextAlignment=TextAlignment.Center,FontSize=thermal?10:12});
-        doc.Blocks.Add(new Paragraph(new Bold(new Run(vm.Title))){TextAlignment=TextAlignment.Center,FontSize=thermal?16:22});
+        if(thermal)
+        {
+            var title=new Paragraph{TextAlignment=TextAlignment.Center,Margin=new Thickness(0,0,0,8)};
+            if(brand.LogoBytes is {Length:>0}){var img=new Image{Source=ToImage(brand.LogoBytes),Height=54,Stretch=Stretch.Uniform};title.Inlines.Add(new InlineUIContainer(img));title.Inlines.Add(new LineBreak());}
+            title.Inlines.Add(new Bold(new Run(brand.ArabicName)){FontSize=18});
+            title.Inlines.Add(new LineBreak()); if(!string.IsNullOrWhiteSpace(brand.BusinessDescription))title.Inlines.Add(new Run(brand.BusinessDescription));
+            doc.Blocks.Add(title);
+            doc.Blocks.Add(new Paragraph(new Run($"{brand.City} • {brand.Phones}")){TextAlignment=TextAlignment.Center,FontSize=10});
+        }
+        else
+        {
+            var header=new Grid{Margin=new Thickness(0,0,0,12)};
+            header.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            header.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(170)));
+            header.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            var company=new TextBlock{Text=$"{brand.ArabicName}\n{brand.BusinessDescription}",FontSize=15,FontWeight=FontWeights.Bold,TextAlignment=TextAlignment.Right,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};
+            Grid.SetColumn(company,0);header.Children.Add(company);
+            if(brand.LogoBytes is {Length:>0}){var img=new Image{Source=ToImage(brand.LogoBytes),Height=80,Stretch=Stretch.Uniform};Grid.SetColumn(img,1);header.Children.Add(img);}
+            var info=new TextBlock{Text=$"{brand.City}\n{brand.Address}\n{brand.Phones}\n{brand.Email}\nالرقم الضريبي: {brand.TaxNumber}\nالسجل: {brand.CommercialRegistration}",FontSize=10,TextAlignment=TextAlignment.Left,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center,FlowDirection=FlowDirection.RightToLeft};
+            Grid.SetColumn(info,2);header.Children.Add(info);doc.Blocks.Add(new BlockUIContainer(header));
+        }
+        var docTitle=new Paragraph{TextAlignment=TextAlignment.Center,Margin=new Thickness(0,6,0,10)};
+        docTitle.Inlines.Add(new Bold(new Run(vm.Title)){FontSize=thermal?16:22});docTitle.Inlines.Add(new LineBreak());
+        docTitle.Inlines.Add(new Run($"رقم: {vm.DocumentNumber}   |   التاريخ: {vm.DocumentDate:yyyy-MM-dd HH:mm}"){FontSize=thermal?9:11});
+        doc.Blocks.Add(docTitle);
         var table=new Table{CellSpacing=0}; table.Columns.Add(new TableColumn{Width=new GridLength(thermal?130:300)});table.Columns.Add(new TableColumn{Width=new GridLength(thermal?48:90)});table.Columns.Add(new TableColumn{Width=new GridLength(thermal?70:120)});
         var rg=new TableRowGroup();table.RowGroups.Add(rg); var h=new TableRow();h.Cells.Add(Cell("الصنف",true));h.Cells.Add(Cell("الكمية",true));h.Cells.Add(Cell("الإجمالي",true));rg.Rows.Add(h);
         foreach(var l in vm.Lines){var r=new TableRow();r.Cells.Add(Cell(l.Name));r.Cells.Add(Cell(l.Quantity.ToString("N3")));r.Cells.Add(Cell(l.LineTotal.ToString("N2")));rg.Rows.Add(r);} doc.Blocks.Add(table);
         doc.Blocks.Add(new Paragraph(new Bold(new Run($"قبل الضريبة: {vm.Subtotal:N2}\nالضريبة: {vm.Tax:N2}\nالصافي: {vm.GrandTotal:N2} {brand.CurrencySymbol}"))){TextAlignment=TextAlignment.Left});
         if(!thermal)doc.Blocks.Add(new Paragraph(new Run($"الرقم الضريبي: {brand.TaxNumber}     السجل التجاري: {brand.CommercialRegistration}\nتوقيع المحاسب: ______________     توقيع المستلم: ______________")){Margin=new Thickness(0,24,0,10)});
-        doc.Blocks.Add(BuildQrBlock($"{brand.ArabicName}|{vm.Title}|{vm.GrandTotal:N2}|{DateTimeOffset.Now:O}",thermal));
+        doc.Blocks.Add(BuildQrBlock($"{brand.ArabicName}|{vm.Title}|{vm.DocumentNumber}|{vm.DocumentDate:O}|{vm.GrandTotal:N2}|{brand.TaxNumber}",thermal));
         if(!string.IsNullOrWhiteSpace(brand.FooterNotes))doc.Blocks.Add(new Paragraph(new Run(brand.FooterNotes)){TextAlignment=TextAlignment.Center,FontSize=10});
         return doc;
     }
