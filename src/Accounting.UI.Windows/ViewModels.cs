@@ -121,6 +121,8 @@ public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspac
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
         DetailsCommand = new AsyncRelayCommand(OpenSelectedDetailsAsync);
         RemoveLineCommand = new RelayCommand(RemoveSelectedLine, () => SelectedLine is not null);
+        PrintThermalCommand = new AsyncRelayCommand(() => PrintAsync(true));
+        PrintA4Command = new AsyncRelayCommand(() => PrintAsync(false));
         _ = LoadPolicyAsync();
         _ = InitializeProductionInvoiceAsync();
     }
@@ -156,6 +158,8 @@ public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspac
     public AsyncRelayCommand RefreshCommand { get; }
     public AsyncRelayCommand DetailsCommand { get; }
     public RelayCommand RemoveLineCommand { get; }
+    public AsyncRelayCommand PrintThermalCommand { get; }
+    public AsyncRelayCommand PrintA4Command { get; }
 
     public async Task SaveAndPostAsync()
     {
@@ -345,6 +349,17 @@ public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspac
         GrandTotal = policy.TaxPolicy.PricesIncludeTax
             ? Subtotal
             : decimal.Round(Subtotal + Tax, policy.CurrencyScale, policy.RoundingMode);
+    }
+
+    private async Task PrintAsync(bool thermal)
+    {
+        try
+        {
+            var branding = await _facade.GetBrandingAsync().ConfigureAwait(true);
+            InvoicePrintService.Preview(InvoicePrintService.Build(this, branding, thermal),
+                thermal ? "معاينة فاتورة 80mm" : "معاينة فاتورة A4");
+        }
+        catch (Exception ex) { Status = ex.Message; }
     }
 
     private void RemoveSelectedLine()
