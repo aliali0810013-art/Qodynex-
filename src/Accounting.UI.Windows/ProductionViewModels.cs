@@ -281,6 +281,7 @@ public sealed class ReportsSyncViewModel : ObservableObject, IWorkspaceActionTar
 
 public sealed partial class ShellViewModel
 {
+    public void OpenQuickSearch() => OpenTab("quick-search", "بحث سريع", new QuickSearchViewModel(_facade));
     public RelayCommand OpenDashboardCommand { get; private set; } = null!;
     public RelayCommand OpenVouchersWorkspaceCommand { get; private set; } = null!;
     public RelayCommand OpenInventoryWorkspaceCommand { get; private set; } = null!;
