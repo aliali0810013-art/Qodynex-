@@ -23,7 +23,7 @@ public sealed partial class InvoiceEditorViewModel
     public string PartnerLabel => _isSales ? "العميل" : "المورد";
     public string QuickPartnerButtonLabel => _isSales ? "+ عميل جديد سريع" : "+ مورد جديد سريع";
     public ItemLookup? SelectedSearchItem { get => _selectedSearchItem; set => Set(ref _selectedSearchItem, value); }
-    public RelayCommand OpenInvoiceHistoryCommand => new(() => _open(_isSales ? "sales-history" : "purchase-history",
+    public RelayCommand OpenInvoiceHistoryCommand => new(() => _openTab(_isSales ? "sales-history" : "purchase-history",
         _isSales ? "فواتير المبيعات السابقة" : "فواتير المشتريات السابقة", new InvoiceHistoryViewModel(_facade, _isSales)));
     public async Task<PartnerLookup> CreateQuickPartnerAsync(string name, string? phone)
     {
@@ -134,7 +134,7 @@ public sealed partial class VoucherEditorViewModel
         {
             var accountsTask = _facade.SearchAccountsAsync(string.Empty);
             var cashTask = _facade.GetCashBankAccountsAsync();
-            var partnersTask = _facade.SearchPartnersByTypeAsync(_isReceipt ? PartnerType.Customer : PartnerType.Supplier);
+            var partnersTask = _facade.SearchPartnersByTypeAsync(_receipt ? PartnerType.Customer : PartnerType.Supplier);
             await Task.WhenAll(accountsTask, cashTask, partnersTask).ConfigureAwait(true);
             VoucherAccounts.Clear(); foreach (var row in accountsTask.Result) VoucherAccounts.Add(row);
             VoucherCashAccounts.Clear(); foreach (var row in cashTask.Result) VoucherCashAccounts.Add(row);
