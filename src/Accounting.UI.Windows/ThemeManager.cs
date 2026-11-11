@@ -43,7 +43,9 @@ public static class ThemeManager
         var p = dark ? Dark : Light;
         return Contrast(p["TextBrush"], p["InputBrush"]) >= 7d
             && Contrast(p["TextBrush"], p["CardBrush"]) >= 7d
-            && Contrast(p["SelectionTextBrush"], p["SelectionBrush"]) >= 4.5d;
+            && Contrast(p["SelectionTextBrush"], p["SelectionBrush"]) >= 4.5d
+            && Contrast("#FFFFFF", p["PrimaryBrush"]) >= 4.5d
+            && Contrast("#991B1B", "#FEF2F2") >= 4.5d;
     }
 
     private static double Contrast(string a, string b)
