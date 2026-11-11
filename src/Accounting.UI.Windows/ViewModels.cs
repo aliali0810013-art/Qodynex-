@@ -320,7 +320,18 @@ public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspac
         Recalculate();
     }
 
-    private void OnLineChanged(object? sender, PropertyChangedEventArgs e) => Recalculate();
+    private async void OnLineChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is InvoiceLineViewModel line && e.PropertyName == nameof(InvoiceLineViewModel.SelectedUnit) && line.SelectedUnit is not null)
+        {
+            try
+            {
+                line.UnitPrice = await _facade.GetSuggestedUnitPriceAsync(ModuleKey, line.ItemId, line.SelectedUnit.BaseUnitsPerUnit, line.UnitPrice).ConfigureAwait(true);
+            }
+            catch (Exception ex) { Status = ex.Message; }
+        }
+        Recalculate();
+    }
 
     private async Task LoadPolicyAsync()
     {
