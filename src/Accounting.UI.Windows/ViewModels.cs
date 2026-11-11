@@ -495,7 +495,7 @@ public sealed class LedgerViewModel : ObservableObject, IWorkspaceActionTarget
     public Task OpenSelectedDetailsAsync() => RefreshAsync();
 }
 
-public sealed class ShellViewModel : ObservableObject
+public sealed partial class ShellViewModel : ObservableObject
 {
     private readonly WindowsAccountingFacade _facade;
     private readonly LocalSyncStore _syncStore;
