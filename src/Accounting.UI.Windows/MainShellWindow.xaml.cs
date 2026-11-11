@@ -78,6 +78,32 @@ public partial class MainShellWindow : Window
         }
     }
 
+    private async void OnQuickPartnerClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.DataContext is not InvoiceEditorViewModel vm) return;
+        var name = new TextBox { Margin = new Thickness(8), MinWidth = 300 };
+        var phone = new TextBox { Margin = new Thickness(8), MinWidth = 300 };
+        var ok = new Button { Content = "إضافة واختيار", Margin = new Thickness(8), IsDefault = true, MinWidth = 120 };
+        var cancel = new Button { Content = "إلغاء", Margin = new Thickness(8), IsCancel = true, MinWidth = 90 };
+        var window = new Window
+        {
+            Title = vm.PartnerLabel == "العميل" ? "إضافة عميل سريع" : "إضافة مورد سريع",
+            Width = 430, Height = 270, WindowStartupLocation = WindowStartupLocation.CenterOwner, Owner = this,
+            ResizeMode = ResizeMode.NoResize
+        };
+        var root = new StackPanel { Margin = new Thickness(18), FlowDirection = FlowDirection.RightToLeft };
+        root.Children.Add(new TextBlock { Text = $"اسم {vm.PartnerLabel}", FontWeight = FontWeights.SemiBold });
+        root.Children.Add(name); root.Children.Add(new TextBlock { Text = "الهاتف / الجوال" }); root.Children.Add(phone);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left };
+        actions.Children.Add(ok); actions.Children.Add(cancel); root.Children.Add(actions); window.Content = root;
+        ok.Click += async (_, _) =>
+        {
+            try { await vm.CreateQuickPartnerAsync(name.Text, phone.Text).ConfigureAwait(true); window.DialogResult = true; }
+            catch (Exception ex) { MessageBox.Show(ex.Message, window.Title, MessageBoxButton.OK, MessageBoxImage.Warning); }
+        };
+        window.ShowDialog();
+    }
+
     private async void OnInvoiceLineItemChanged(object sender, SelectionChangedEventArgs e)
     {
         if (sender is not ComboBox combo || combo.DataContext is not InvoiceLineViewModel line || combo.SelectedItem is not ItemLookup item)
