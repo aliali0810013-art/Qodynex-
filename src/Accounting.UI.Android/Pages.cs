@@ -76,7 +76,7 @@ public sealed class SetupPage : ContentPage
         _user = MobileUi.Entry("UserId"); _user.Text = settings.UserId == Guid.Empty ? "" : settings.UserId.ToString("D");
         _device = MobileUi.Entry("DeviceId الموجود داخل JWT"); _device.Text = settings.DeviceId == Guid.Empty ? "" : settings.DeviceId.ToString("D");
         _deviceName = MobileUi.Entry("اسم الجهاز"); _deviceName.Text = settings.DeviceName;
-        _status = new Label { Text = initialError ?? "التهيئة الأولى تتطلب اتصالاً بالخادم. بعد نجاحها يعمل التطبيق دون إنترنت.", TextColor = Colors.DarkSlateGray };
+        _status = new Label { Text = initialError ?? "التهيئة الأولى تتطلب اتصالاً بالخادم. بعد نجاحها يعمل التطبيق دون إنترنت.", TextColor = MobileTheme.Muted };
         _save = MobileUi.PrimaryButton("تسجيل الجهاز وتنزيل بيانات الشركة");
         _save.Clicked += SaveAsync;
 
@@ -123,7 +123,7 @@ public sealed class SetupPage : ContentPage
 
             _status.Text = "جارٍ تسجيل الجهاز وتنزيل سياسة الشركة والبيانات الأساسية...";
             await _runtime.InitializeAsync().ConfigureAwait(true);
-            Microsoft.Maui.Controls.Application.Current!.MainPage = new NavigationPage(new HomePage(_runtime));
+            Microsoft.Maui.Controls.Application.Current!.MainPage = new ProductionMobileShell(_runtime);
             _runtime.StartSyncLoop();
         }
         catch (Exception ex)
@@ -206,7 +206,7 @@ public sealed class HomePage : ContentPage
         _syncStatus.Text =
             $"Outbox: {status.PendingOutbox + status.RetryableFailures}   |   تعارضات: {status.UnresolvedConflicts}\n" +
             $"آخر مزامنة: {(status.LastSuccessfulSyncUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "لم تتم")}";
-        _syncStatus.TextColor = status.UnresolvedConflicts > 0 ? Colors.DarkRed : Colors.DarkGreen;
+        _syncStatus.TextColor = status.UnresolvedConflicts > 0 ? MobileTheme.Red : MobileTheme.Green;
     }
 
     private async Task SyncNowAsync()
@@ -314,7 +314,7 @@ public sealed class SalePage : ContentPage
     private readonly Label _tax = new() { FontSize = 15 };
     private readonly Label _total = new() { FontSize = 22, FontAttributes = FontAttributes.Bold };
     private CompanyPolicy? _policy;
-    private readonly Label _status = new() { TextColor = Colors.DarkSlateGray };
+    private readonly Label _status = new() { TextColor = MobileTheme.Muted };
     private CancellationTokenSource? _hidDebounce;
 
     public SalePage(MobileRuntime runtime, string moduleKey)
@@ -762,7 +762,7 @@ public sealed class ConflictsPage : ContentPage
             ItemTemplate = new DataTemplate(() =>
             {
                 var stack = new VerticalStackLayout { Padding = 10, Spacing = 3 };
-                var code = new Label { FontAttributes = FontAttributes.Bold, TextColor = Colors.DarkRed };
+                var code = new Label { FontAttributes = FontAttributes.Bold, TextColor = MobileTheme.Red };
                 code.SetBinding(Label.TextProperty, nameof(LocalConflictRow.Code));
                 var message = new Label(); message.SetBinding(Label.TextProperty, nameof(LocalConflictRow.Message));
                 var date = new Label { FontSize = 12 }; date.SetBinding(Label.TextProperty, new Binding(nameof(LocalConflictRow.DateUtc), stringFormat: "{0:yyyy-MM-dd HH:mm}"));
