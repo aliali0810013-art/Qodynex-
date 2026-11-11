@@ -23,6 +23,14 @@ public sealed partial class InvoiceEditorViewModel
     public string PartnerLabel => _isSales ? "العميل" : "المورد";
     public string QuickPartnerButtonLabel => _isSales ? "+ عميل جديد سريع" : "+ مورد جديد سريع";
     public ItemLookup? SelectedSearchItem { get => _selectedSearchItem; set => Set(ref _selectedSearchItem, value); }
+    public RelayCommand OpenInvoiceHistoryCommand => new(() => _open(_isSales ? "sales-history" : "purchase-history",
+        _isSales ? "فواتير المبيعات السابقة" : "فواتير المشتريات السابقة", new InvoiceHistoryViewModel(_facade, _isSales)));
+    public async Task<PartnerLookup> CreateQuickPartnerAsync(string name, string? phone)
+    {
+        var partner = await _facade.CreateQuickPartnerAsync(_isSales, name, phone).ConfigureAwait(true);
+        Partners.Add(partner); SelectedPartner = partner; Status = _isSales ? "تمت إضافة العميل واختياره." : "تمت إضافة المورد واختياره.";
+        return partner;
+    }
     public AsyncRelayCommand AddSelectedItemCommand => new(async () =>
     {
         if (SelectedSearchItem is null) { Status = "اختر صنفاً من قائمة البحث."; return; }
@@ -452,4 +460,62 @@ public sealed partial class ShellViewModel
         }
         catch { }
     }
+}
+
+
+public sealed class InvoiceHistoryViewModel : ObservableObject, IWorkspaceActionTarget
+{
+    private readonly WindowsAccountingFacade _facade;
+    private readonly bool _sales;
+    private InvoiceHistoryRow? _selected;
+    private string _status="جاهز";
+    public ObservableCollection<InvoiceHistoryRow> Rows { get; } = new();
+    public ObservableCollection<InvoiceHistoryLineRow> Lines { get; } = new();
+    public InvoiceHistoryRow? Selected
+    {
+        get=>_selected;
+        set { if(Set(ref _selected,value)) _=LoadLinesAsync(); }
+    }
+    public string Status { get=>_status; private set=>Set(ref _status,value); }
+    public AsyncRelayCommand RefreshCommand { get; }
+    public AsyncRelayCommand ReverseCommand { get; }
+
+    public InvoiceHistoryViewModel(WindowsAccountingFacade facade,bool sales)
+    {
+        _facade=facade;_sales=sales;
+        RefreshCommand=new AsyncRelayCommand(RefreshAsync);
+        ReverseCommand=new AsyncRelayCommand(ReverseAsync,()=>Selected is not null&&!Selected.IsReversed);
+        _=RefreshAsync();
+    }
+    public async Task RefreshAsync()
+    {
+        try
+        {
+            Rows.Clear(); foreach(var x in await _facade.GetInvoiceHistoryAsync(_sales).ConfigureAwait(true)) Rows.Add(x);
+            if(Selected is null) Selected=Rows.FirstOrDefault();
+            Status=$"{Rows.Count} فاتورة مرحّلة";
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+    private async Task LoadLinesAsync()
+    {
+        Lines.Clear(); if(Selected is null)return;
+        foreach(var x in await _facade.GetInvoiceHistoryLinesAsync(_sales,Selected.Id).ConfigureAwait(true))Lines.Add(x);
+        ReverseCommand.Refresh();
+    }
+    private async Task ReverseAsync()
+    {
+        try
+        {
+            if(Selected is null)throw new InvalidOperationException("حدد فاتورة أولاً.");
+            if(Selected.IsReversed)throw new InvalidOperationException("الفاتورة معكوسة مسبقاً.");
+            var result=await _facade.ReverseDocumentAsync(Selected.Id).ConfigureAwait(true);
+            Status=$"تم إنشاء مرتجع/عكس محاسبي للعملية {result.OperationId:N}.";
+            Selected=null; await RefreshAsync().ConfigureAwait(true);
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+    public Task SaveAndPostAsync()=>Task.CompletedTask;
+    public Task QuickSearchAsync()=>RefreshAsync();
+    public Task OpenSelectedDetailsAsync()=>LoadLinesAsync();
 }
