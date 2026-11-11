@@ -232,6 +232,7 @@ public sealed class MobileSaleLineViewModel : BindableObject
     private decimal _quantity = 1m;
     private decimal _baseUnitsPerUnit = 1m;
     private decimal _unitPrice;
+    private decimal _discount;
 
     public Guid ItemId { get; init; }
     public string Sku { get; init; } = string.Empty;
@@ -298,7 +299,20 @@ public sealed class MobileSaleLineViewModel : BindableObject
         }
     }
 
-    public decimal Total => Quantity * UnitPrice;
+    public decimal Discount
+    {
+        get => _discount;
+        set
+        {
+            if (value < 0m || _discount == value) return;
+            _discount = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(Total));
+        }
+    }
+
+    public decimal Total => Math.Max(0m, Quantity * UnitPrice - Discount);
+    public decimal NetUnitPrice => Quantity <= 0m ? 0m : Total / Quantity;
 }
 
 public sealed class SalePage : ContentPage
@@ -309,7 +323,9 @@ public sealed class SalePage : ContentPage
     private readonly Entry _barcode = MobileUi.Entry("امسح الباركود أو اكتب الكود");
     private readonly Picker _warehouse = new() { Title = "المستودع" };
     private readonly Picker _settlement = new() { Title = "حساب الدفع/العميل" };
-    private readonly Picker _partner = new() { Title = "العميل (اختياري)" };
+    private readonly Picker _partner = new() { Title = "العميل (اختياري للنقدي)" };
+    private readonly Picker _payment = new() { Title = "طريقة الدفع", ItemsSource = new[] { "نقدي", "آجل" }, SelectedIndex = 0 };
+    private readonly Picker _itemSearch = new() { Title = "اختر صنفاً بالاسم" };
     private readonly Picker _serviceType = new() { Title = "نوع خدمة المطعم" };
     private readonly Label _tax = new() { FontSize = 15 };
     private readonly Label _total = new() { FontSize = 22, FontAttributes = FontAttributes.Bold };
@@ -328,6 +344,21 @@ public sealed class SalePage : ContentPage
         scan.Clicked += async (_, _) => await Navigation.PushAsync(new BarcodeScannerPage(AddCodeAsync));
         _barcode.Completed += async (_, _) => await AddCodeAsync(_barcode.Text ?? string.Empty);
         _barcode.TextChanged += OnBarcodeTextChanged;
+        _itemSearch.SelectedIndexChanged += async (_, _) =>
+        {
+            if (_itemSearch.SelectedItem is MobileItem item) await AddItemAsync(item).ConfigureAwait(true);
+            _itemSearch.SelectedIndex = -1;
+        };
+        _payment.SelectedIndexChanged += (_, _) =>
+        {
+            var credit = _payment.SelectedIndex == 1;
+            _settlement.IsEnabled = !credit;
+            if (credit && _partner.SelectedItem is MobilePartner p) SelectPartnerControlAccount(p);
+        };
+        _partner.SelectedIndexChanged += (_, _) =>
+        {
+            if (_payment.SelectedIndex == 1 && _partner.SelectedItem is MobilePartner p) SelectPartnerControlAccount(p);
+        };
 
         _serviceType.ItemsSource = new[] { "محلي", "سفري", "توصيل" };
         _serviceType.SelectedIndex = 0;
@@ -349,7 +380,8 @@ public sealed class SalePage : ContentPage
                         new ColumnDefinition(GridLength.Star),
                         new ColumnDefinition(new GridLength(105)),
                         new ColumnDefinition(new GridLength(68)),
-                        new ColumnDefinition(new GridLength(92)),
+                        new ColumnDefinition(new GridLength(82)),
+                        new ColumnDefinition(new GridLength(78)),
                         new ColumnDefinition(new GridLength(40))
                     }
                 };
@@ -363,6 +395,8 @@ public sealed class SalePage : ContentPage
                 qty.SetBinding(Entry.TextProperty, nameof(MobileSaleLineViewModel.Quantity), BindingMode.TwoWay);
                 var price = new Entry { Keyboard = Keyboard.Numeric, HorizontalTextAlignment = TextAlignment.Center, Placeholder = "السعر" };
                 price.SetBinding(Entry.TextProperty, nameof(MobileSaleLineViewModel.UnitPrice), BindingMode.TwoWay);
+                var discount = new Entry { Keyboard = Keyboard.Numeric, HorizontalTextAlignment = TextAlignment.Center, Placeholder = "خصم" };
+                discount.SetBinding(Entry.TextProperty, nameof(MobileSaleLineViewModel.Discount), BindingMode.TwoWay);
                 var remove = new Button { Text = "×", Padding = 0 };
                 remove.SetBinding(Button.CommandParameterProperty, ".");
                 remove.Clicked += (_, _) =>
@@ -370,7 +404,7 @@ public sealed class SalePage : ContentPage
                     if (remove.CommandParameter is MobileSaleLineViewModel row) _lines.Remove(row);
                     Recalculate();
                 };
-                grid.Add(name, 0); grid.Add(unit, 1); grid.Add(qty, 2); grid.Add(price, 3); grid.Add(remove, 4);
+                grid.Add(name, 0); grid.Add(unit, 1); grid.Add(qty, 2); grid.Add(price, 3); grid.Add(discount, 4); grid.Add(remove, 5);
                 return grid;
             })
         };
@@ -394,21 +428,22 @@ public sealed class SalePage : ContentPage
                 new VerticalStackLayout
                 {
                     Spacing = 8,
-                    Children = { _barcode, scan }
+                    Children = { _barcode, _itemSearch, scan }
                 },
                 new Grid
                 {
-                    RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto) },
+                    RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto) },
                     ColumnDefinitions = { new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Star) },
                     Children =
                     {
                         _warehouse.Position(0,0),
-                        _settlement.Position(1,0),
-                        _partner.Position(0,1),
-                        _serviceType.Position(1,1)
+                        _payment.Position(1,0),
+                        _settlement.Position(0,1),
+                        _partner.Position(1,1),
+                        _serviceType.Position(0,2)
                     }
                 }.Position(0,1),
-                new Label { Text = "الصنف | الوحدة | الكمية | السعر", FontAttributes = FontAttributes.Bold }.Position(0,2),
+                new Label { Text = "الصنف | الوحدة | الكمية | السعر | الخصم", FontAttributes = FontAttributes.Bold }.Position(0,2),
                 list.Position(0,3),
                 new VerticalStackLayout { Spacing = 6, Children = { _tax, _total, post, _status } }.Position(0,4)
             }
@@ -422,15 +457,18 @@ public sealed class SalePage : ContentPage
     {
         if (_settlement.ItemsSource is not null) return;
         _policy = await _runtime.Facade.GetPolicyAsync().ConfigureAwait(true);
-        var accounts = await _runtime.Facade.GetPostableAccountsAsync().ConfigureAwait(true);
+        var accounts = await _runtime.Facade.GetCashBankAccountsAsync().ConfigureAwait(true);
         var partners = await _runtime.Facade.GetCustomersAsync().ConfigureAwait(true);
         var warehouses = await _runtime.Facade.GetWarehousesAsync().ConfigureAwait(true);
+        var items = await _runtime.Facade.SearchItemsAsync().ConfigureAwait(true);
         _settlement.ItemsSource = accounts;
         _settlement.ItemDisplayBinding = new Binding(nameof(MobileAccount.Name));
         _partner.ItemsSource = partners;
         _partner.ItemDisplayBinding = new Binding(nameof(MobilePartner.Name));
         _warehouse.ItemsSource = warehouses;
         _warehouse.ItemDisplayBinding = new Binding(nameof(MobileWarehouse.Name));
+        _itemSearch.ItemsSource = items;
+        _itemSearch.ItemDisplayBinding = new Binding(nameof(MobileItem.Name));
         if (accounts.Count > 0) _settlement.SelectedIndex = 0;
         if (warehouses.Count > 0) _warehouse.SelectedIndex = 0;
         Recalculate();
@@ -462,6 +500,14 @@ public sealed class SalePage : ContentPage
             return;
         }
 
+        await AddItemAsync(item).ConfigureAwait(true);
+        _barcode.Text = string.Empty;
+        _status.Text = $"تمت إضافة {item.Name}";
+        Recalculate();
+    }
+
+    private async Task AddItemAsync(MobileItem item)
+    {
         var existing = _lines.FirstOrDefault(x => x.ItemId == item.Id);
         if (existing is not null)
             existing.Quantity += 1m;
@@ -490,9 +536,14 @@ public sealed class SalePage : ContentPage
             _lines.Add(row);
         }
 
-        _barcode.Text = string.Empty;
-        _status.Text = $"تمت إضافة {item.Name}";
         Recalculate();
+    }
+
+    private void SelectPartnerControlAccount(MobilePartner partner)
+    {
+        if (_settlement.ItemsSource is not IEnumerable<MobileAccount> accounts) return;
+        var index = accounts.Select((x,i)=>(x,i)).FirstOrDefault(x=>x.x.Id==partner.ControlAccountId).i;
+        if (index >= 0) _settlement.SelectedIndex = index;
     }
 
     private void Recalculate()
@@ -534,7 +585,17 @@ public sealed class SalePage : ContentPage
     {
         try
         {
-            if (_settlement.SelectedItem is not MobileAccount account) throw new InvalidOperationException("حدد حساب الدفع/العميل.");
+            MobileAccount account;
+            if (_payment.SelectedIndex == 1)
+            {
+                if (_partner.SelectedItem is not MobilePartner creditCustomer) throw new InvalidOperationException("البيع الآجل يتطلب تحديد العميل.");
+                account = new MobileAccount(creditCustomer.ControlAccountId, "1130", "ذمم العملاء");
+            }
+            else
+            {
+                if (_settlement.SelectedItem is not MobileAccount cashAccount) throw new InvalidOperationException("حدد الصندوق/البنك.");
+                account = cashAccount;
+            }
             var warehouseId = _warehouse.SelectedItem is MobileWarehouse warehouse ? warehouse.Id : Guid.Empty;
             if (_warehouse.IsVisible && warehouseId == Guid.Empty) throw new InvalidOperationException("حدد المستودع.");
             var partnerId = (_partner.SelectedItem as MobilePartner)?.Id;
@@ -549,7 +610,7 @@ public sealed class SalePage : ContentPage
             }
 
             var result = await _runtime.Facade.PostSaleAsync(_moduleKey, metadata, warehouseId, account.Id, partnerId,
-                _lines.Select(x => new MobileSaleLine(x.ItemId, x.UnitOfMeasureId, x.Quantity, x.BaseUnitsPerUnit, x.UnitPrice)).ToArray()).ConfigureAwait(true);
+                _lines.Select(x => new MobileSaleLine(x.ItemId, x.UnitOfMeasureId, x.Quantity, x.BaseUnitsPerUnit, x.NetUnitPrice)).ToArray()).ConfigureAwait(true);
             _lines.Clear();
             Recalculate();
             _status.Text = $"تم الترحيل أوفلاين بنجاح. {result.OperationId:N}\nسيمنح الخادم الرقم الرسمي عند المزامنة.";
