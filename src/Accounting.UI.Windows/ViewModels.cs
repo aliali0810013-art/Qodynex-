@@ -71,7 +71,7 @@ public sealed class InvoiceLineViewModel : ObservableObject
     public decimal LineTotal => Quantity * UnitPrice;
 }
 
-public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionTarget
+public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionTarget
 {
     private readonly WindowsAccountingFacade _facade;
     private readonly Action<string, string, object> _openTab;
@@ -99,6 +99,7 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
         DetailsCommand = new AsyncRelayCommand(OpenSelectedDetailsAsync);
         RemoveLineCommand = new RelayCommand(RemoveSelectedLine, () => SelectedLine is not null);
         _ = LoadPolicyAsync();
+        _ = InitializeProductionInvoiceAsync();
     }
 
     public string Title => _isSales ? "فاتورة مبيعات" : "فاتورة مشتريات";
@@ -135,13 +136,22 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
 
     public async Task SaveAndPostAsync()
     {
-        if (!Guid.TryParse(SettlementAccountIdText, out var settlement) || settlement == Guid.Empty)
+        var settlement = SelectedSettlementAccount?.Id
+            ?? (Guid.TryParse(SettlementAccountIdText, out var parsedSettlement) ? parsedSettlement : Guid.Empty);
+        if (settlement == Guid.Empty)
         {
             Status = "حدد حساب التسوية قبل الترحيل.";
             return;
         }
-        var warehouse = Guid.TryParse(WarehouseIdText, out var parsedWarehouse) ? parsedWarehouse : Guid.Empty;
-        var partner = Guid.TryParse(PartnerIdText, out var parsedPartner) ? parsedPartner : (Guid?)null;
+        var warehouse = SelectedWarehouse?.Id
+            ?? (Guid.TryParse(WarehouseIdText, out var parsedWarehouse) ? parsedWarehouse : Guid.Empty);
+        var partner = SelectedPartner?.Id
+            ?? (Guid.TryParse(PartnerIdText, out var parsedPartner) ? parsedPartner : (Guid?)null);
+        if (_isSales && string.Equals(PaymentMethod, "آجل", StringComparison.Ordinal) && partner is null)
+        {
+            Status = "البيع الآجل يتطلب تحديد العميل.";
+            return;
+        }
         if (Lines.Count == 0 || Lines.Any(x => x.Quantity <= 0m || x.BaseUnitsPerUnit <= 0m || x.UnitPrice <= 0m))
         {
             Status = "أضف سطراً واحداً على الأقل وتأكد أن الكمية والسعر أكبر من صفر.";
@@ -302,7 +312,7 @@ public sealed class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionT
     }
 }
 
-public sealed class VoucherEditorViewModel : ObservableObject, IWorkspaceActionTarget
+public sealed partial class VoucherEditorViewModel : ObservableObject, IWorkspaceActionTarget
 {
     private readonly WindowsAccountingFacade _facade;
     private readonly Action<string, string, object> _openTab;
@@ -313,6 +323,7 @@ public sealed class VoucherEditorViewModel : ObservableObject, IWorkspaceActionT
     {
         _facade = facade; _openTab = openTab; _receipt = receipt;
         SaveCommand = new AsyncRelayCommand(SaveAndPostAsync);
+        _ = InitializeProductionVoucherAsync();
     }
 
     public string Title => _receipt ? "سند قبض" : "سند صرف";
@@ -326,12 +337,17 @@ public sealed class VoucherEditorViewModel : ObservableObject, IWorkspaceActionT
 
     public async Task SaveAndPostAsync()
     {
-        if (!Guid.TryParse(CashAccountIdText, out var cash) || !Guid.TryParse(CounterAccountIdText, out var counter) || Amount <= 0m)
+        var cash = SelectedCashAccount?.Id
+            ?? (Guid.TryParse(CashAccountIdText, out var parsedCash) ? parsedCash : Guid.Empty);
+        var counter = SelectedCounterAccount?.Id
+            ?? (Guid.TryParse(CounterAccountIdText, out var parsedCounter) ? parsedCounter : Guid.Empty);
+        if (cash == Guid.Empty || counter == Guid.Empty || Amount <= 0m)
         {
             Status = "تحقق من حساب الصندوق/البنك والحساب المقابل والمبلغ.";
             return;
         }
-        var partner = Guid.TryParse(PartnerIdText, out var partnerId) ? partnerId : (Guid?)null;
+        var partner = SelectedVoucherPartner?.Id
+            ?? (Guid.TryParse(PartnerIdText, out var partnerId) ? partnerId : (Guid?)null);
         try
         {
             var result = await _facade.PostVoucherAsync(_receipt, cash, counter, partner, Amount, Description).ConfigureAwait(true);
@@ -398,7 +414,7 @@ public sealed class QuickSearchViewModel : ObservableObject, IWorkspaceActionTar
     public Task OpenSelectedDetailsAsync() { Status = "انسخ المعرّف لفتح السجل المطلوب من الشاشة المختصة."; return Task.CompletedTask; }
 }
 
-public sealed class ItemsViewModel : ObservableObject, IWorkspaceActionTarget
+public sealed partial class ItemsViewModel : ObservableObject, IWorkspaceActionTarget
 {
     private readonly WindowsAccountingFacade _facade;
     public ObservableCollection<ItemLookup> Items { get; } = new();
@@ -455,7 +471,7 @@ public sealed class ItemMovementViewModel : ObservableObject, IWorkspaceActionTa
     public Task OpenSelectedDetailsAsync() => RefreshAsync();
 }
 
-public sealed class LedgerViewModel : ObservableObject, IWorkspaceActionTarget
+public sealed partial class LedgerViewModel : ObservableObject, IWorkspaceActionTarget
 {
     private readonly WindowsAccountingFacade _facade;
     private readonly Action<string, string, object> _openTab;
@@ -519,6 +535,7 @@ public sealed partial class ShellViewModel : ObservableObject
         OpenPartnersCommand = new RelayCommand(() => OpenTab("partners", "العملاء والموردون", new PartnersViewModel(_facade)));
         OpenLedgerCommand = new RelayCommand(() => OpenTab("ledger", "دفتر الأستاذ وميزان المراجعة", new LedgerViewModel(_facade, OpenTab)));
         OpenModuleScreenCommand = new ParameterCommand(OpenModuleScreen);
+        InitializeProductionNavigation(facade, syncStore, user, enabledModules);
     }
 
     public TabWorkspaceManager Workspace { get; }
