@@ -33,7 +33,7 @@ public static class ThemeManager
         var palette = dark ? Dark : Light;
         foreach (var pair in palette)
         {
-            if (Application.Current.TryFindResource(pair.Key) is SolidColorBrush brush)
+            if (System.Windows.Application.Current.TryFindResource(pair.Key) is SolidColorBrush brush)
                 brush.Color = (Color)ColorConverter.ConvertFromString(pair.Value);
         }
     }
@@ -59,7 +59,7 @@ public static class ThemeManager
 
     public static bool IsLightBackground(string resourceKey)
     {
-        if (Application.Current.TryFindResource(resourceKey) is not SolidColorBrush brush) return false;
+        if (System.Windows.Application.Current.TryFindResource(resourceKey) is not SolidColorBrush brush) return false;
         var c = brush.Color;
         var luminance = (0.2126*c.R + 0.7152*c.G + 0.0722*c.B)/255d;
         return luminance > 0.72;
