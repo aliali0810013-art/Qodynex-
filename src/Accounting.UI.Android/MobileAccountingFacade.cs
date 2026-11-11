@@ -16,6 +16,8 @@ public sealed record MobileSaleLine(Guid ItemId, Guid UnitOfMeasureId, decimal Q
 public sealed record MobileStatementRow(DateTimeOffset DateUtc, string Reference, string Description, decimal Debit, decimal Credit, decimal RunningBalance);
 public sealed record MobileInventoryResult(MobileItem Item, StockPosition? Position, IReadOnlyList<ItemMovement> Movements);
 public sealed record ItemMovement(DateTimeOffset DateUtc, string Source, decimal QuantityDelta, decimal InventoryValueDelta, decimal UnitCost);
+public sealed record MobileBrandingSnapshot(string ArabicName,string EnglishName,string City,string Address,string Phones,string Email,
+    string TaxNumber,string CommercialRegistration,string FooterNotes,string CurrencyCode,string CurrencySymbol,bool TaxEnabled,decimal TaxRate,bool AllowNegativeStock,bool DarkThemeEnabled,byte[]? LogoBytes);
 public sealed record MobileStockCard(Guid ItemId, string Sku, string Name, string UnitName, decimal QuantityOnHand, decimal AverageUnitCost, decimal InventoryValue);
 
 public sealed partial class MobileAccountingFacade
@@ -30,6 +32,17 @@ public sealed partial class MobileAccountingFacade
         LocalTempNumberGenerator numbers, UserContext user)
     {
         _db = db; _posting = posting; _queries = queries; _numbers = numbers; _user = user;
+    }
+
+    public Task<List<MobileItem>> SearchItemsAsync(string text = "", CancellationToken ct = default)
+    {
+        text = text.Trim();
+        return _db.Items.AsNoTracking()
+            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive
+                     && (text == "" || x.Sku.Contains(text) || x.Name.Contains(text) || (x.Barcode != null && x.Barcode.Contains(text))))
+            .OrderBy(x => x.Name).Take(100)
+            .Select(x => new MobileItem(x.Id, x.Sku, x.Name, x.Barcode, x.BaseUnitOfMeasureId, x.ItemKind))
+            .ToListAsync(ct);
     }
 
     public async Task<MobileItem?> FindItemAsync(string code, CancellationToken ct = default)
@@ -220,6 +233,35 @@ public sealed partial class MobileAccountingFacade
                 position.QuantityOnHand, position.AverageUnitCost, position.InventoryValue));
         }
         return result;
+    }
+
+    public async Task<MobileBrandingSnapshot> GetBrandingAsync(CancellationToken ct = default)
+    {
+        var company=await _db.Companies.AsNoTracking().SingleAsync(x=>x.Id==_user.CompanyId,ct).ConfigureAwait(false);
+        var row=await _db.LocalCompanyBrandingSettings.AsNoTracking().SingleOrDefaultAsync(x=>x.CompanyId==_user.CompanyId&&x.BranchId==_user.BranchId,ct).ConfigureAwait(false);
+        return row is null
+            ? new(company.Name,"","","","","","","","",company.BaseCurrencyCode,company.BaseCurrencyCode,company.TaxEnabled,company.TaxRate,company.AllowNegativeStock,false,null)
+            : new(row.ArabicName,row.EnglishName,row.City,row.Address,row.Phones,row.Email,row.TaxNumber,row.CommercialRegistration,row.FooterNotes,row.CurrencyCode,row.CurrencySymbol,row.TaxEnabled,row.TaxRate,row.AllowNegativeStock,row.DarkThemeEnabled,row.LogoBytes);
+    }
+
+    public async Task SaveBrandingAsync(MobileBrandingSnapshot value,CancellationToken ct=default)
+    {
+        var company=await _db.Companies.SingleAsync(x=>x.Id==_user.CompanyId,ct).ConfigureAwait(false);
+        var row=await _db.LocalCompanyBrandingSettings.SingleOrDefaultAsync(x=>x.CompanyId==_user.CompanyId&&x.BranchId==_user.BranchId,ct).ConfigureAwait(false);
+        if(row is null){row=new LocalCompanyBrandingSettings{Id=UuidV7.NewGuid(),CompanyId=_user.CompanyId,BranchId=_user.BranchId};_db.LocalCompanyBrandingSettings.Add(row);}
+        row.ArabicName=value.ArabicName;row.EnglishName=value.EnglishName;row.City=value.City;row.Address=value.Address;row.Phones=value.Phones;row.Email=value.Email;
+        row.TaxNumber=value.TaxNumber;row.CommercialRegistration=value.CommercialRegistration;row.FooterNotes=value.FooterNotes;row.CurrencyCode=value.CurrencyCode;row.CurrencySymbol=value.CurrencySymbol;
+        row.TaxEnabled=value.TaxEnabled;row.TaxRate=value.TaxRate;row.AllowNegativeStock=value.AllowNegativeStock;row.DarkThemeEnabled=value.DarkThemeEnabled;row.LogoBytes=value.LogoBytes;row.UpdatedAtUtcTicks=DateTimeOffset.UtcNow.UtcTicks;
+        var output=company.OutputTaxAccountId;var input=company.InputTaxAccountId;
+        if(value.TaxEnabled&&value.TaxRate>0m&&output is null)
+        {
+            var outAcc=new Account(_user.CompanyId,_user.BranchId,"2130","ضريبة مخرجات مستحقة",AccountType.Liability,NormalBalance.Credit,true);
+            var inAcc=new Account(_user.CompanyId,_user.BranchId,"1150","ضريبة مدخلات قابلة للاسترداد",AccountType.Asset,NormalBalance.Debit,true);
+            _db.Accounts.AddRange(outAcc,inAcc);output=outAcc.Id;input=inAcc.Id;
+        }
+        company.UpdateSettings(value.ArabicName,new CompanyPolicy(value.CurrencyCode,company.CurrencyScale,company.RoundingMode,company.InventoryValuationMethod,value.AllowNegativeStock,
+            value.TaxEnabled?new TaxPolicy(true,value.TaxRate,company.PricesIncludeTax,output,input):TaxPolicy.Disabled,company.QuantityScale));
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
 }
