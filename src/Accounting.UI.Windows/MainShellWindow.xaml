@@ -66,6 +66,7 @@
             <StackPanel Grid.Column="2" Margin="4">
               <TextBlock Text="{Binding PartnerLabel}" Foreground="{StaticResource MutedBrush}" Margin="2,0,2,4"/>
               <ComboBox ItemsSource="{Binding Partners}" SelectedItem="{Binding SelectedPartner}" DisplayMemberPath="Name" IsEditable="True" IsTextSearchEnabled="True" TextSearch.TextPath="Name"/>
+              <Button Content="{Binding QuickPartnerButtonLabel}" Click="OnQuickPartnerClick" Padding="8,4" MinHeight="30"/>
             </StackPanel>
             <StackPanel Grid.Column="3" Margin="4"><TextBlock Text="حساب التسوية" Foreground="{StaticResource MutedBrush}" Margin="2,0,2,4"/><ComboBox ItemsSource="{Binding SettlementAccounts}" SelectedItem="{Binding SelectedSettlementAccount}" DisplayMemberPath="Name"/></StackPanel>
           </Grid>
@@ -85,6 +86,7 @@
               <Button Style="{StaticResource PrimaryButton}" Content="حفظ وترحيل F5" Command="{Binding SaveCommand}"/>
               <Button Content="طباعة فاتورة مبسطة (80mm)" Command="{Binding PrintThermalCommand}"/>
               <Button Content="طباعة فاتورة A4 رسمية" Command="{Binding PrintA4Command}"/>
+              <Button Content="الفواتير السابقة / مرتجع" Command="{Binding OpenInvoiceHistoryCommand}"/>
             </StackPanel>
           </Grid>
         </Border>
@@ -120,6 +122,39 @@
             <StackPanel Grid.Column="3" Margin="12,4"><TextBlock Text="الصافي النهائي" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding GrandTotal,StringFormat={}{0:N2}}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Margin="0,5,0,0"/></StackPanel>
           </Grid>
         </Border>
+      </Grid>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:InvoiceHistoryViewModel}">
+      <Grid Margin="16">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="1.2*"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid>
+          <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <StackPanel><TextBlock Text="الفواتير السابقة" FontSize="28" FontWeight="Bold"/><TextBlock Text="عرض المستند المرحّل وإنشاء مرتجع/عكس محاسبي دون تعديل الأصل" Foreground="{StaticResource MutedBrush}"/></StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal"><Button Content="تحديث" Command="{Binding RefreshCommand}"/><Button Style="{StaticResource DangerButton}" Content="إنشاء مرتجع / عكس المحدد" Command="{Binding ReverseCommand}"/></StackPanel>
+        </Grid>
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Rows}" SelectedItem="{Binding Selected}" IsReadOnly="True">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="النوع" Binding="{Binding Kind}" Width="90"/>
+            <DataGridTextColumn Header="الرقم المحلي" Binding="{Binding LocalNumber}" Width="130"/>
+            <DataGridTextColumn Header="الرقم الرسمي" Binding="{Binding OfficialNumber}" Width="130"/>
+            <DataGridTextColumn Header="التاريخ" Binding="{Binding DateUtc,StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="160"/>
+            <DataGridTextColumn Header="الطرف" Binding="{Binding PartnerName}" Width="*"/>
+            <DataGridTextColumn Header="الإجمالي" Binding="{Binding Total,StringFormat={}{0:N2}}" Width="130"/>
+            <DataGridCheckBoxColumn Header="معكوس" Binding="{Binding IsReversed}" Width="80"/>
+          </DataGrid.Columns>
+        </DataGrid>
+        <DataGrid Grid.Row="2" ItemsSource="{Binding Lines}" IsReadOnly="True">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="SKU" Binding="{Binding Sku}" Width="120"/>
+            <DataGridTextColumn Header="الصنف" Binding="{Binding Name}" Width="*"/>
+            <DataGridTextColumn Header="الوحدة" Binding="{Binding UnitName}" Width="100"/>
+            <DataGridTextColumn Header="الكمية" Binding="{Binding Quantity,StringFormat={}{0:N3}}" Width="110"/>
+            <DataGridTextColumn Header="السعر" Binding="{Binding UnitPrice,StringFormat={}{0:N2}}" Width="110"/>
+            <DataGridTextColumn Header="الإجمالي" Binding="{Binding Total,StringFormat={}{0:N2}}" Width="130"/>
+          </DataGrid.Columns>
+        </DataGrid>
+        <TextBlock Grid.Row="3" Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" Margin="6"/>
       </Grid>
     </DataTemplate>
 
