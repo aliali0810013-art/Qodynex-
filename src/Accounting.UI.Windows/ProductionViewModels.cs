@@ -177,6 +177,99 @@ public sealed partial class ItemsViewModel
     }
 }
 
+public sealed class InventoryWorkspaceViewModel : ObservableObject, IWorkspaceActionTarget
+{
+    private readonly WindowsAccountingFacade _facade;
+    private readonly Action<string,string,object> _open;
+    private WarehouseLookup? _warehouse;
+    private InventoryGridRow? _selectedItem;
+    private UnitLookup? _baseUnit, _cartonUnit;
+    private AccountLookup? _inventoryAccount, _salesAccount, _cogsAccount;
+    private string _sku="", _name="", _barcode="", _status="جاهز";
+    private decimal _cartonFactor=12m;
+
+    public ObservableCollection<WarehouseLookup> Warehouses { get; } = new();
+    public ObservableCollection<InventoryGridRow> Rows { get; } = new();
+    public ObservableCollection<UnitLookup> Units { get; } = new();
+    public ObservableCollection<AccountLookup> Accounts { get; } = new();
+    public WarehouseLookup? SelectedWarehouse { get=>_warehouse; set { if(Set(ref _warehouse,value)) _=RefreshAsync(); } }
+    public InventoryGridRow? SelectedItem { get=>_selectedItem; set=>Set(ref _selectedItem,value); }
+    public UnitLookup? BaseUnit { get=>_baseUnit; set=>Set(ref _baseUnit,value); }
+    public UnitLookup? CartonUnit { get=>_cartonUnit; set=>Set(ref _cartonUnit,value); }
+    public AccountLookup? InventoryAccount { get=>_inventoryAccount; set=>Set(ref _inventoryAccount,value); }
+    public AccountLookup? SalesAccount { get=>_salesAccount; set=>Set(ref _salesAccount,value); }
+    public AccountLookup? CogsAccount { get=>_cogsAccount; set=>Set(ref _cogsAccount,value); }
+    public string NewSku { get=>_sku; set=>Set(ref _sku,value); }
+    public string NewName { get=>_name; set=>Set(ref _name,value); }
+    public string NewBarcode { get=>_barcode; set=>Set(ref _barcode,value); }
+    public decimal CartonFactor { get=>_cartonFactor; set=>Set(ref _cartonFactor,value); }
+    public string Status { get=>_status; private set=>Set(ref _status,value); }
+    public AsyncRelayCommand AddItemCommand { get; }
+    public AsyncRelayCommand RefreshCommand { get; }
+    public AsyncRelayCommand OpenStockLedgerCommand { get; }
+
+    public InventoryWorkspaceViewModel(WindowsAccountingFacade facade, Action<string,string,object> open)
+    {
+        _facade=facade; _open=open;
+        AddItemCommand=new AsyncRelayCommand(AddItemAsync);
+        RefreshCommand=new AsyncRelayCommand(RefreshAsync);
+        OpenStockLedgerCommand=new AsyncRelayCommand(OpenStockLedgerAsync);
+        _=InitializeAsync();
+    }
+
+    private async Task InitializeAsync()
+    {
+        try
+        {
+            var w=_facade.GetWarehousesAsync(); var u=_facade.GetUnitsAsync(); var a=_facade.SearchAccountsAsync("");
+            await Task.WhenAll(w,u,a).ConfigureAwait(true);
+            Warehouses.Clear(); foreach(var x in w.Result)Warehouses.Add(x);
+            Units.Clear(); foreach(var x in u.Result)Units.Add(x);
+            Accounts.Clear(); foreach(var x in a.Result)Accounts.Add(x);
+            _warehouse=Warehouses.FirstOrDefault(); Raise(nameof(SelectedWarehouse));
+            BaseUnit=Units.FirstOrDefault(x=>x.Code=="EA")??Units.FirstOrDefault();
+            CartonUnit=Units.FirstOrDefault(x=>x.Code=="CTN")??Units.Skip(1).FirstOrDefault();
+            InventoryAccount=Accounts.FirstOrDefault(x=>x.Code=="1140")??Accounts.FirstOrDefault();
+            SalesAccount=Accounts.FirstOrDefault(x=>x.Code=="4100")??Accounts.FirstOrDefault();
+            CogsAccount=Accounts.FirstOrDefault(x=>x.Code=="5100")??Accounts.FirstOrDefault();
+            await RefreshAsync().ConfigureAwait(true);
+        } catch(Exception ex){Status=ex.Message;}
+    }
+
+    public async Task RefreshAsync()
+    {
+        try
+        {
+            if(SelectedWarehouse is null)return;
+            Rows.Clear(); foreach(var x in await _facade.GetInventoryGridAsync(SelectedWarehouse.Id).ConfigureAwait(true))Rows.Add(x);
+            Status=$"{Rows.Count} صنف في {SelectedWarehouse.Name}";
+        }catch(Exception ex){Status=ex.Message;}
+    }
+
+    private async Task AddItemAsync()
+    {
+        try
+        {
+            if(BaseUnit is null||InventoryAccount is null||SalesAccount is null||CogsAccount is null)throw new InvalidOperationException("أكمل الوحدة والحسابات.");
+            var id=await _facade.CreateLocalItemAsync(NewSku,NewName,NewBarcode,BaseUnit.Id,InventoryAccount.Id,SalesAccount.Id,CogsAccount.Id,CartonUnit?.Id,CartonFactor).ConfigureAwait(true);
+            Status=$"تمت إضافة الصنف إلى SQLite: {id:N}";
+            NewSku=NewName=NewBarcode=""; Raise(nameof(NewSku));Raise(nameof(NewName));Raise(nameof(NewBarcode));
+            await RefreshAsync().ConfigureAwait(true);
+        }catch(Exception ex){Status=ex.Message;}
+    }
+
+    private async Task OpenStockLedgerAsync()
+    {
+        if(SelectedItem is null||SelectedWarehouse is null){Status="حدد صنفاً ومستودعاً.";return;}
+        var vm=new ItemMovementViewModel(_facade,SelectedItem.ItemId,SelectedWarehouse.Id,SelectedItem.Name);
+        await vm.RefreshAsync().ConfigureAwait(true);
+        _open($"stock:{SelectedItem.ItemId:N}:{SelectedWarehouse.Id:N}",$"كرت الصنف - {SelectedItem.Name}",vm);
+    }
+    public Task SaveAndPostAsync()=>AddItemAsync();
+    public Task QuickSearchAsync()=>RefreshAsync();
+    public Task OpenSelectedDetailsAsync()=>OpenStockLedgerAsync();
+}
+
 public sealed class VouchersWorkspaceViewModel : ObservableObject, IWorkspaceActionTarget
 {
     private readonly WindowsAccountingFacade _facade; private readonly Action<string,string,object> _open; private string _status="جاهز";
@@ -256,13 +349,15 @@ public sealed class ReportsSyncViewModel : ObservableObject, IWorkspaceActionTar
     private PartnerLookup? _selectedPartner; private string _partnerBalance="-",_syncSummary="-",_status="جاهز";
     public ObservableCollection<PartnerLookup> Partners { get; }=new(); public ObservableCollection<LedgerRow> StatementRows { get; }=new();
     public ObservableCollection<TrialBalanceRow> TrialBalance { get; }=new(); public ObservableCollection<OutboxUiRow> Outbox { get; }=new(); public ObservableCollection<ConflictUiRow> Conflicts { get; }=new();
+    private ConflictUiRow? _selectedConflict;
+    public ConflictUiRow? SelectedConflict { get=>_selectedConflict; set=>Set(ref _selectedConflict,value); }
     public PartnerLookup? SelectedPartner { get=>_selectedPartner; set=>Set(ref _selectedPartner,value); }
     public string PartnerBalance { get=>_partnerBalance; private set=>Set(ref _partnerBalance,value); }
     public string SyncSummary { get=>_syncSummary; private set=>Set(ref _syncSummary,value); }
     public string Status { get=>_status; private set=>Set(ref _status,value); }
-    public AsyncRelayCommand LoadStatementCommand { get; } public AsyncRelayCommand RefreshCommand { get; }
+    public AsyncRelayCommand LoadStatementCommand { get; } public AsyncRelayCommand RefreshCommand { get; } public AsyncRelayCommand ResolveConflictCommand { get; }
     public ReportsSyncViewModel(WindowsAccountingFacade facade,LocalSyncStore syncStore,UserContext user)
-    { _facade=facade;_syncStore=syncStore;_user=user;LoadStatementCommand=new AsyncRelayCommand(LoadStatementAsync);RefreshCommand=new AsyncRelayCommand(RefreshAsync);_=RefreshAsync();}
+    { _facade=facade;_syncStore=syncStore;_user=user;LoadStatementCommand=new AsyncRelayCommand(LoadStatementAsync);RefreshCommand=new AsyncRelayCommand(RefreshAsync);ResolveConflictCommand=new AsyncRelayCommand(ResolveConflictAsync);_=RefreshAsync();}
     public async Task RefreshAsync()
     {
         try
@@ -276,6 +371,7 @@ public sealed class ReportsSyncViewModel : ObservableObject, IWorkspaceActionTar
         }catch(Exception ex){Status=ex.Message;}
     }
     private async Task LoadStatementAsync(){try{if(SelectedPartner is null)throw new InvalidOperationException("حدد العميل/المورد.");var x=await _facade.GetPartnerStatementAsync(SelectedPartner.Id).ConfigureAwait(true);StatementRows.Clear();foreach(var row in x.Rows)StatementRows.Add(row);PartnerBalance=$"{x.PartnerName} — الرصيد {x.Balance:N2}";}catch(Exception ex){Status=ex.Message;}}
+    private async Task ResolveConflictAsync(){try{if(SelectedConflict is null)throw new InvalidOperationException("حدد تعارضاً.");await _facade.ResolveConflictLocallyAsync(SelectedConflict.Id).ConfigureAwait(true);Status="تم تعليم التعارض كمحلول محلياً بعد المعالجة.";await RefreshAsync().ConfigureAwait(true);}catch(Exception ex){Status=ex.Message;}}
     public Task SaveAndPostAsync()=>RefreshAsync(); public Task QuickSearchAsync()=>LoadStatementAsync(); public Task OpenSelectedDetailsAsync()=>LoadStatementAsync();
 }
 
@@ -298,7 +394,7 @@ public sealed partial class ShellViewModel
         _ = LoadProductionHeaderAsync();
         OpenDashboardCommand=new RelayCommand(()=>OpenTab("dashboard","لوحة القيادة",new DashboardViewModel(facade,OpenTab)));
         OpenVouchersWorkspaceCommand=new RelayCommand(()=>OpenTab("vouchers","السندات المالية",new VouchersWorkspaceViewModel(facade,OpenTab)));
-        OpenInventoryWorkspaceCommand=new RelayCommand(()=>{var vm=new ItemsViewModel(facade);_=vm.RefreshProductionAsync();OpenTab("inventory","المخزون والأصناف",vm);});
+        OpenInventoryWorkspaceCommand=new RelayCommand(()=>OpenTab("inventory","المخزون والأصناف",new InventoryWorkspaceViewModel(facade,OpenTab)));
         OpenAccountsWorkspaceCommand=new RelayCommand(()=>OpenTab("accounts","الحسابات ودفتر الأستاذ",new AccountsWorkspaceViewModel(facade)));
         OpenReportsSyncCommand=new RelayCommand(()=>OpenTab("reports-sync","التقارير والمزامنة",new ReportsSyncViewModel(facade,syncStore,user)));
         OpenTab("dashboard","لوحة القيادة",new DashboardViewModel(facade,OpenTab));
