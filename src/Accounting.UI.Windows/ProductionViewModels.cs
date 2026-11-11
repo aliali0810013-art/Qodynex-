@@ -249,8 +249,8 @@ public sealed class InventoryWorkspaceViewModel : ObservableObject, IWorkspaceAc
     private InventoryGridRow? _selectedItem;
     private UnitLookup? _baseUnit, _cartonUnit;
     private AccountLookup? _inventoryAccount, _salesAccount, _cogsAccount;
-    private string _sku="", _name="", _barcode="", _status="جاهز";
-    private decimal _cartonFactor=12m;
+    private string _sku="", _name="", _barcode="", _cartonBarcode="", _status="جاهز";
+    private decimal _cartonFactor=12m, _salesPrice, _openingCost, _cartonSalesPrice;
 
     public ObservableCollection<WarehouseLookup> Warehouses { get; } = new();
     public ObservableCollection<InventoryGridRow> Rows { get; } = new();
@@ -266,6 +266,10 @@ public sealed class InventoryWorkspaceViewModel : ObservableObject, IWorkspaceAc
     public string NewSku { get=>_sku; set=>Set(ref _sku,value); }
     public string NewName { get=>_name; set=>Set(ref _name,value); }
     public string NewBarcode { get=>_barcode; set=>Set(ref _barcode,value); }
+    public string CartonBarcode { get=>_cartonBarcode; set=>Set(ref _cartonBarcode,value); }
+    public decimal SalesPrice { get=>_salesPrice; set=>Set(ref _salesPrice,value); }
+    public decimal OpeningUnitCost { get=>_openingCost; set=>Set(ref _openingCost,value); }
+    public decimal CartonSalesPrice { get=>_cartonSalesPrice; set=>Set(ref _cartonSalesPrice,value); }
     public decimal CartonFactor { get=>_cartonFactor; set=>Set(ref _cartonFactor,value); }
     public string Status { get=>_status; private set=>Set(ref _status,value); }
     public AsyncRelayCommand AddItemCommand { get; }
@@ -315,9 +319,9 @@ public sealed class InventoryWorkspaceViewModel : ObservableObject, IWorkspaceAc
         try
         {
             if(BaseUnit is null||InventoryAccount is null||SalesAccount is null||CogsAccount is null)throw new InvalidOperationException("أكمل الوحدة والحسابات.");
-            var id=await _facade.CreateLocalItemAsync(NewSku,NewName,NewBarcode,BaseUnit.Id,InventoryAccount.Id,SalesAccount.Id,CogsAccount.Id,CartonUnit?.Id,CartonFactor).ConfigureAwait(true);
+            var id=await _facade.CreateLocalItemAsync(NewSku,NewName,NewBarcode,BaseUnit.Id,InventoryAccount.Id,SalesAccount.Id,CogsAccount.Id,CartonUnit?.Id,CartonFactor,SalesPrice,OpeningUnitCost,CartonBarcode,CartonSalesPrice).ConfigureAwait(true);
             Status=$"تمت إضافة الصنف إلى SQLite: {id:N}";
-            NewSku=NewName=NewBarcode=""; Raise(nameof(NewSku));Raise(nameof(NewName));Raise(nameof(NewBarcode));
+            NewSku=NewName=NewBarcode=CartonBarcode=""; SalesPrice=OpeningUnitCost=CartonSalesPrice=0m; Raise(nameof(NewSku));Raise(nameof(NewName));Raise(nameof(NewBarcode));
             await RefreshAsync().ConfigureAwait(true);
         }catch(Exception ex){Status=ex.Message;}
     }

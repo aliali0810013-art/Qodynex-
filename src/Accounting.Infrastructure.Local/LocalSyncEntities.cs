@@ -74,3 +74,18 @@ public sealed class LocalCompanyBrandingSettings
     public bool DarkThemeEnabled { get; set; }
     public long UpdatedAtUtcTicks { get; set; }
 }
+
+
+public sealed class LocalItemCommercialSettings
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid BranchId { get; set; }
+    public Guid ItemId { get; set; }
+    public decimal BaseSalesPrice { get; set; }
+    public decimal OpeningUnitCost { get; set; }
+    public Guid? CartonUnitId { get; set; }
+    public string? CartonBarcode { get; set; }
+    public decimal CartonSalesPrice { get; set; }
+    public long UpdatedAtUtcTicks { get; set; }
+}

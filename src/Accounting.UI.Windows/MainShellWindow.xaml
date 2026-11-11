@@ -239,6 +239,9 @@
                 <DataGridTextColumn Header="الوحدة" Binding="{Binding UnitName}" Width="100"/><DataGridTextColumn Header="الرصيد" Binding="{Binding Quantity, StringFormat={}{0:N3}}" Width="120"/>
                 <DataGridTextColumn Header="الكرتون" Binding="{Binding CartonText}" Width="230"/><DataGridTextColumn Header="متوسط التكلفة" Binding="{Binding AverageCost, StringFormat={}{0:N2}}" Width="140"/>
                 <DataGridTextColumn Header="قيمة المخزون" Binding="{Binding InventoryValue, StringFormat={}{0:N2}}" Width="150"/>
+                <DataGridTextColumn Header="سعر البيع" Binding="{Binding SalesPrice, StringFormat={}{0:N2}}" Width="120"/>
+                <DataGridTextColumn Header="باركود الكرتون" Binding="{Binding CartonBarcode}" Width="150"/>
+                <DataGridTextColumn Header="سعر الكرتون" Binding="{Binding CartonSalesPrice, StringFormat={}{0:N2}}" Width="130"/>
               </DataGrid.Columns>
             </DataGrid>
             <TextBlock Grid.Row="2" Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" Margin="6"/>
@@ -248,7 +251,7 @@
           <ScrollViewer><StackPanel Margin="26" MaxWidth="980" HorizontalAlignment="Center">
             <TextBlock Text="إضافة صنف جديد إلى SQLite" FontSize="24" FontWeight="Bold" Margin="4,0,4,14"/>
             <Border Style="{StaticResource CardBorder}"><Grid>
-              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
               <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
               <StackPanel><TextBlock Text="SKU" Foreground="{StaticResource MutedBrush}"/><TextBox Text="{Binding NewSku,UpdateSourceTrigger=PropertyChanged}"/></StackPanel>
               <StackPanel Grid.Column="1"><TextBlock Text="اسم الصنف" Foreground="{StaticResource MutedBrush}"/><TextBox Text="{Binding NewName,UpdateSourceTrigger=PropertyChanged}"/></StackPanel>
@@ -256,8 +259,12 @@
               <StackPanel Grid.Row="1" Grid.Column="1"><TextBlock Text="الوحدة الأساسية" Foreground="{StaticResource MutedBrush}"/><ComboBox ItemsSource="{Binding Units}" SelectedItem="{Binding BaseUnit}" DisplayMemberPath="Name"/></StackPanel>
               <StackPanel Grid.Row="2"><TextBlock Text="وحدة الكرتون" Foreground="{StaticResource MutedBrush}"/><ComboBox ItemsSource="{Binding Units}" SelectedItem="{Binding CartonUnit}" DisplayMemberPath="Name"/></StackPanel>
               <StackPanel Grid.Row="2" Grid.Column="1"><TextBlock Text="عدد الوحدات في الكرتون" Foreground="{StaticResource MutedBrush}"/><TextBox Text="{Binding CartonFactor}"/></StackPanel>
-              <StackPanel Grid.Row="3"><TextBlock Text="حساب المخزون" Foreground="{StaticResource MutedBrush}"/><ComboBox ItemsSource="{Binding Accounts}" SelectedItem="{Binding InventoryAccount}" DisplayMemberPath="Name"/></StackPanel>
-              <Grid Grid.Row="3" Grid.Column="1"><Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions><ComboBox ItemsSource="{Binding Accounts}" SelectedItem="{Binding SalesAccount}" DisplayMemberPath="Name"/><ComboBox Grid.Row="1" ItemsSource="{Binding Accounts}" SelectedItem="{Binding CogsAccount}" DisplayMemberPath="Name"/></Grid>
+              <StackPanel Grid.Row="3"><TextBlock Text="سعر بيع الوحدة الأساسية" Foreground="{StaticResource MutedBrush}"/><TextBox Text="{Binding SalesPrice,UpdateSourceTrigger=PropertyChanged}"/></StackPanel>
+              <StackPanel Grid.Row="3" Grid.Column="1"><TextBlock Text="التكلفة الافتتاحية للوحدة" Foreground="{StaticResource MutedBrush}"/><TextBox Text="{Binding OpeningUnitCost,UpdateSourceTrigger=PropertyChanged}"/></StackPanel>
+              <StackPanel Grid.Row="4"><TextBlock Text="باركود الكرتون" Foreground="{StaticResource MutedBrush}"/><TextBox Text="{Binding CartonBarcode,UpdateSourceTrigger=PropertyChanged}"/></StackPanel>
+              <StackPanel Grid.Row="4" Grid.Column="1"><TextBlock Text="سعر بيع الكرتون" Foreground="{StaticResource MutedBrush}"/><TextBox Text="{Binding CartonSalesPrice,UpdateSourceTrigger=PropertyChanged}"/></StackPanel>
+              <StackPanel Grid.Row="5"><TextBlock Text="حساب المخزون" Foreground="{StaticResource MutedBrush}"/><ComboBox ItemsSource="{Binding Accounts}" SelectedItem="{Binding InventoryAccount}" DisplayMemberPath="Name"/></StackPanel>
+              <Grid Grid.Row="5" Grid.Column="1"><Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions><ComboBox ItemsSource="{Binding Accounts}" SelectedItem="{Binding SalesAccount}" DisplayMemberPath="Name" ToolTip="حساب إيراد المبيعات"/><ComboBox Grid.Row="1" ItemsSource="{Binding Accounts}" SelectedItem="{Binding CogsAccount}" DisplayMemberPath="Name" ToolTip="حساب تكلفة المبيعات"/></Grid>
             </Grid></Border>
             <Button Style="{StaticResource PrimaryButton}" Content="إضافة الصنف" Command="{Binding AddItemCommand}" Height="52"/>
             <TextBlock Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="6"/>

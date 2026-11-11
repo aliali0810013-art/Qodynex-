@@ -9,6 +9,7 @@ namespace Accounting.UI.Windows;
 
 public sealed record ItemLookup(Guid Id, string Sku, string Name, string? Barcode, Guid BaseUnitOfMeasureId, ItemKind ItemKind);
 public sealed record ItemUnitOption(Guid UnitOfMeasureId, string Code, string Name, decimal BaseUnitsPerUnit);
+public sealed record ItemScanMatch(ItemLookup Item, Guid? PreferredUnitOfMeasureId);
 public sealed record PartnerLookup(Guid Id, string Code, string Name, Guid ControlAccountId, decimal CreditLimit, PartnerType PartnerType);
 public sealed record AccountLookup(Guid Id, string Code, string Name);
 public sealed record InvoiceDraftLine(Guid ItemId, Guid UnitOfMeasureId, decimal Quantity, decimal BaseUnitsPerUnit, decimal UnitPrice);
@@ -41,14 +42,33 @@ public sealed partial class WindowsAccountingFacade
             .ToListAsync(ct).ConfigureAwait(false);
     }
 
-    public async Task<ItemLookup?> FindItemByBarcodeOrSkuAsync(string code, CancellationToken ct = default)
+    public async Task<ItemLookup?> FindItemByBarcodeOrSkuAsync(string code, CancellationToken ct = default) =>
+        (await FindItemScanAsync(code, ct).ConfigureAwait(false))?.Item;
+
+    public async Task<ItemScanMatch?> FindItemScanAsync(string code, CancellationToken ct = default)
     {
         var value = code.Trim();
         if (value.Length == 0) return null;
-        return await _db.Items.AsNoTracking()
-            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive && (x.Sku == value || x.Barcode == value))
+
+        var item = await _db.Items.AsNoTracking()
+            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive
+                     && (x.Sku == value || x.Barcode == value))
             .Select(x => new ItemLookup(x.Id, x.Sku, x.Name, x.Barcode, x.BaseUnitOfMeasureId, x.ItemKind))
             .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+        if (item is not null)
+            return new ItemScanMatch(item, item.BaseUnitOfMeasureId);
+
+        var commercial = await _db.LocalItemCommercialSettings.AsNoTracking()
+            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.CartonBarcode == value)
+            .Select(x => new { x.ItemId, x.CartonUnitId })
+            .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+        if (commercial is null) return null;
+
+        item = await _db.Items.AsNoTracking()
+            .Where(x => x.Id == commercial.ItemId && x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive)
+            .Select(x => new ItemLookup(x.Id, x.Sku, x.Name, x.Barcode, x.BaseUnitOfMeasureId, x.ItemKind))
+            .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+        return item is null ? null : new ItemScanMatch(item, commercial.CartonUnitId ?? item.BaseUnitOfMeasureId);
     }
 
     public async Task<IReadOnlyList<PartnerLookup>> SearchPartnersAsync(string text, CancellationToken ct = default)
@@ -132,7 +152,30 @@ public sealed partial class WindowsAccountingFacade
 
     public async Task<decimal> GetSuggestedUnitPriceAsync(string moduleKey, Guid itemId, decimal baseQuantity, decimal fallback, CancellationToken ct = default)
     {
-        if (!string.Equals(moduleKey, Accounting.Modules.WholesaleModule.ModuleKey, StringComparison.OrdinalIgnoreCase)) return fallback;
+        var commercial = await _db.LocalItemCommercialSettings.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.ItemId == itemId, ct)
+            .ConfigureAwait(false);
+
+        if (commercial is not null)
+        {
+            if (commercial.CartonUnitId.HasValue && commercial.CartonSalesPrice > 0m)
+            {
+                var factor = await _db.ItemUnitConversions.AsNoTracking()
+                    .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId
+                             && x.ItemId == itemId && x.UnitOfMeasureId == commercial.CartonUnitId.Value)
+                    .Select(x => (decimal?)x.BaseUnitsPerUnit)
+                    .SingleOrDefaultAsync(ct).ConfigureAwait(false);
+                if (factor.HasValue && factor.Value == baseQuantity)
+                    fallback = commercial.CartonSalesPrice;
+            }
+
+            if (fallback <= 0m && commercial.BaseSalesPrice > 0m)
+                fallback = commercial.BaseSalesPrice * baseQuantity;
+        }
+
+        if (!string.Equals(moduleKey, Accounting.Modules.WholesaleModule.ModuleKey, StringComparison.OrdinalIgnoreCase))
+            return fallback;
+
         var json = await _db.LocalModuleConfigurations.AsNoTracking()
             .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.ModuleKey == Accounting.Modules.WholesaleModule.ModuleKey)
             .Select(x => x.ConfigurationJson)

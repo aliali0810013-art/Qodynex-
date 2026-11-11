@@ -29,6 +29,7 @@ public sealed class DatabaseSchemaUpgrader
     public const string ModuleConfigurationMigration = "20261110043000_ModuleConfiguration";
     public const string UtcTicksMigration = "20261110050000_UtcTicksAndOrderingIndexes";
     public const string BrandingMigration = "20261111193000_CompanyBrandingSettings";
+    public const string ItemCommercialSettingsMigration = "20261111210000_ItemCommercialSettings";
 
     private readonly LocalAccountingDbContext _db;
     private readonly string? _databasePath;
@@ -271,6 +272,32 @@ public sealed class DatabaseSchemaUpgrader
             await ExecuteAsync(connection, """
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_LocalCompanyBrandingSettings_Tenant
                 ON LocalCompanyBrandingSettings (CompanyId, BranchId);
+                """, ct).ConfigureAwait(false);
+        }
+
+        if (applied.Contains(ItemCommercialSettingsMigration))
+        {
+            await ExecuteAsync(connection, """
+                CREATE TABLE IF NOT EXISTS LocalItemCommercialSettings (
+                    Id TEXT NOT NULL PRIMARY KEY,
+                    CompanyId TEXT NOT NULL,
+                    BranchId TEXT NOT NULL,
+                    ItemId TEXT NOT NULL,
+                    BaseSalesPrice TEXT NOT NULL DEFAULT '0',
+                    OpeningUnitCost TEXT NOT NULL DEFAULT '0',
+                    CartonUnitId TEXT NULL,
+                    CartonBarcode TEXT NULL,
+                    CartonSalesPrice TEXT NOT NULL DEFAULT '0',
+                    UpdatedAtUtcTicks INTEGER NOT NULL DEFAULT 0
+                );
+                """, ct).ConfigureAwait(false);
+            await ExecuteAsync(connection, """
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_LocalItemCommercialSettings_Tenant_Item
+                ON LocalItemCommercialSettings (CompanyId, BranchId, ItemId);
+                """, ct).ConfigureAwait(false);
+            await ExecuteAsync(connection, """
+                CREATE INDEX IF NOT EXISTS IX_LocalItemCommercialSettings_Tenant_CartonBarcode
+                ON LocalItemCommercialSettings (CompanyId, BranchId, CartonBarcode);
                 """, ct).ConfigureAwait(false);
         }
     }

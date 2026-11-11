@@ -60,6 +60,25 @@ public sealed class WindowsColdStartTests
             Assert.NotNull(shell);
             Assert.NotEmpty(shell.ModuleScreens);
             Assert.Equal(5, (await facade.SearchItemsAsync(string.Empty)).Count);
+            var units = await facade.GetUnitsAsync();
+            var accounts = await facade.SearchAccountsAsync("");
+            var baseUnit = units.First();
+            var cartonUnit = units.Skip(1).FirstOrDefault();
+            var inventoryAccount = accounts.First(x => x.Code.StartsWith("114", StringComparison.Ordinal));
+            var salesAccount = accounts.First(x => x.Code.StartsWith("4", StringComparison.Ordinal));
+            var cogsAccount = accounts.First(x => x.Code.StartsWith("5", StringComparison.Ordinal));
+            var commercialItemId = await facade.CreateLocalItemAsync(
+                "TEST-PRICE", "صنف سعر تجريبي", "990000001", baseUnit.Id,
+                inventoryAccount.Id, salesAccount.Id, cogsAccount.Id, cartonUnit?.Id, 12m,
+                125m, 80m, "990000012", 1350m);
+            Assert.Equal(125m, await facade.GetSuggestedUnitPriceAsync("RETAIL", commercialItemId, 1m, 0m));
+            if (cartonUnit is not null)
+            {
+                Assert.Equal(1350m, await facade.GetSuggestedUnitPriceAsync("RETAIL", commercialItemId, 12m, 0m));
+                var cartonScan = await facade.FindItemScanAsync("990000012");
+                Assert.NotNull(cartonScan);
+                Assert.Equal(cartonUnit.Id, cartonScan!.PreferredUnitOfMeasureId);
+            }
             Assert.Equal(2, (await facade.SearchPartnersAsync(string.Empty)).Count);
             Assert.Equal("YER", (await facade.GetPolicyAsync()).BaseCurrencyCode);
             Assert.True((await facade.GetStockPositionAsync(seed.ItemIds[0], seed.WarehouseId)).QuantityOnHand > 0m);

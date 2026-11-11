@@ -252,16 +252,17 @@ public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspac
         {
             if (string.IsNullOrWhiteSpace(value)) return;
             await Task.Delay(90, cancellationToken).ConfigureAwait(false);
-            var item = await _facade.FindItemByBarcodeOrSkuAsync(value, cancellationToken).ConfigureAwait(false);
-            if (item is null)
+            var match = await _facade.FindItemScanAsync(value, cancellationToken).ConfigureAwait(false);
+            if (match is null)
             {
                 Status = $"لم يتم العثور على الصنف/الباركود: {value}";
                 return;
             }
 
+            var item = match.Item;
             var unitOptions = await _facade.GetItemUnitsAsync(item.Id, cancellationToken).ConfigureAwait(false);
             if (unitOptions.Count == 0) throw new InvalidOperationException("No unit of measure is configured for the selected item.");
-            var defaultUnit = unitOptions[0];
+            var defaultUnit = unitOptions.FirstOrDefault(x => x.UnitOfMeasureId == match.PreferredUnitOfMeasureId) ?? unitOptions[0];
             var suggestedPrice = await _facade.GetSuggestedUnitPriceAsync(
                 ModuleKey, item.Id, defaultUnit.BaseUnitsPerUnit, 0m, cancellationToken).ConfigureAwait(false);
             await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>

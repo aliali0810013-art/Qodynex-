@@ -11,7 +11,7 @@ public sealed record CompanyProfileRow(string CompanyName, string BranchName, st
 public sealed record DashboardSnapshot(decimal SalesTotal, decimal PurchaseTotal, decimal CashAndBankBalance, int ItemCount, decimal InventoryValue, decimal CustomerReceivables, int PendingOutbox, IReadOnlyList<RecentJournalRow> RecentJournals);
 public sealed record RecentJournalRow(Guid Id, DateTimeOffset DateUtc, string Reference, string Description, decimal Debit, decimal Credit);
 public sealed record WarehouseLookup(Guid Id, string Code, string Name);
-public sealed record InventoryGridRow(Guid ItemId, string Sku, string Name, string UnitName, decimal Quantity, decimal InventoryValue, decimal AverageCost, string CartonText);
+public sealed record InventoryGridRow(Guid ItemId, string Sku, string Name, string UnitName, decimal Quantity, decimal InventoryValue, decimal AverageCost, string CartonText, decimal SalesPrice, string CartonBarcode, decimal CartonSalesPrice);
 public sealed record AccountTreeRow(Guid Id, string Code, string Name, Guid? ParentAccountId, AccountType Type, NormalBalance NormalBalance, bool IsPostable);
 public sealed record JournalHeaderRow(Guid Id, DateTimeOffset DateUtc, string Reference, string Description, string SourceType, Guid SourceDocumentId, decimal Debit, decimal Credit, bool IsReversal);
 public sealed record JournalDetailRow(Guid Id, Guid AccountId, string AccountCode, string AccountName, string Memo, decimal Debit, decimal Credit);
@@ -149,7 +149,11 @@ public sealed partial class WindowsAccountingFacade
                 .ToListAsync(ct).ConfigureAwait(false);
             var carton = conversions.OrderByDescending(x => x.BaseUnitsPerUnit).FirstOrDefault();
             var cartonText = carton is null ? "-" : $"{qty / carton.BaseUnitsPerUnit:N2} {carton.Name} ({carton.BaseUnitsPerUnit:N2} {item.UnitName})";
-            result.Add(new(item.Id, item.Sku, item.Name, item.UnitName, qty, value, avg, cartonText));
+            var commercial = await _db.LocalItemCommercialSettings.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.ItemId == item.Id, ct)
+                .ConfigureAwait(false);
+            result.Add(new(item.Id, item.Sku, item.Name, item.UnitName, qty, value, avg, cartonText,
+                commercial?.BaseSalesPrice ?? 0m, commercial?.CartonBarcode ?? "-", commercial?.CartonSalesPrice ?? 0m));
         }
         return result;
     }
@@ -450,19 +454,61 @@ public sealed partial class WindowsAccountingFacade
             .Select(x => new UnitLookup(x.Id, x.Code, x.Name))
             .ToListAsync(ct);
 
-    public async Task<Guid> CreateLocalItemAsync(string sku, string name, string? barcode, Guid baseUnitId,
-        Guid inventoryAccountId, Guid salesAccountId, Guid cogsAccountId, Guid? cartonUnitId, decimal cartonFactor,
+    public async Task<Guid> CreateLocalItemAsync(
+        string sku, string name, string? barcode, Guid baseUnitId,
+        Guid inventoryAccountId, Guid salesAccountId, Guid cogsAccountId,
+        Guid? cartonUnitId, decimal cartonFactor,
+        decimal baseSalesPrice, decimal openingUnitCost,
+        string? cartonBarcode, decimal cartonSalesPrice,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(sku) || string.IsNullOrWhiteSpace(name))
-            throw new InvalidOperationException("كود الصنف والاسم مطلوبان.");
-        if (await _db.Items.AnyAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.Sku == sku.Trim(), ct).ConfigureAwait(false))
+        sku = sku.Trim();
+        name = name.Trim();
+        barcode = string.IsNullOrWhiteSpace(barcode) ? null : barcode.Trim();
+        cartonBarcode = string.IsNullOrWhiteSpace(cartonBarcode) ? null : cartonBarcode.Trim();
+
+        if (sku.Length == 0 || name.Length == 0) throw new InvalidOperationException("كود الصنف والاسم مطلوبان.");
+        if (baseSalesPrice < 0m || openingUnitCost < 0m || cartonSalesPrice < 0m)
+            throw new InvalidOperationException("الأسعار والتكلفة لا يمكن أن تكون سالبة.");
+        if (await _db.Items.AnyAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.Sku == sku, ct).ConfigureAwait(false))
             throw new InvalidOperationException("كود الصنف مستخدم مسبقاً.");
-        var item = new Item(_user.CompanyId, _user.BranchId, sku.Trim(), name.Trim(), baseUnitId,
+        if (barcode is not null && await _db.Items.AnyAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.Barcode == barcode, ct).ConfigureAwait(false))
+            throw new InvalidOperationException("باركود الوحدة الأساسية مستخدم مسبقاً.");
+
+        if (cartonBarcode is not null)
+        {
+            if (barcode == cartonBarcode) throw new InvalidOperationException("باركود الكرتون يجب أن يختلف عن باركود الوحدة الأساسية.");
+            var duplicateBase = await _db.Items.AnyAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.Barcode == cartonBarcode, ct).ConfigureAwait(false);
+            var duplicateCarton = await _db.LocalItemCommercialSettings.AnyAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.CartonBarcode == cartonBarcode, ct).ConfigureAwait(false);
+            if (duplicateBase || duplicateCarton) throw new InvalidOperationException("باركود الكرتون مستخدم مسبقاً.");
+        }
+
+        var item = new Item(_user.CompanyId, _user.BranchId, sku, name, baseUnitId,
             inventoryAccountId, salesAccountId, cogsAccountId, ItemKind.Stock, barcode);
         _db.Items.Add(item);
+
+        Guid? effectiveCartonUnit = null;
         if (cartonUnitId.HasValue && cartonUnitId.Value != baseUnitId && cartonFactor > 1m)
-            _db.ItemUnitConversions.Add(new ItemUnitConversion(_user.CompanyId, _user.BranchId, item.Id, cartonUnitId.Value, cartonFactor));
+        {
+            effectiveCartonUnit = cartonUnitId.Value;
+            _db.ItemUnitConversions.Add(new ItemUnitConversion(
+                _user.CompanyId, _user.BranchId, item.Id, cartonUnitId.Value, cartonFactor));
+        }
+
+        _db.LocalItemCommercialSettings.Add(new LocalItemCommercialSettings
+        {
+            Id = UuidV7.NewGuid(),
+            CompanyId = _user.CompanyId,
+            BranchId = _user.BranchId,
+            ItemId = item.Id,
+            BaseSalesPrice = baseSalesPrice,
+            OpeningUnitCost = openingUnitCost,
+            CartonUnitId = effectiveCartonUnit,
+            CartonBarcode = cartonBarcode,
+            CartonSalesPrice = cartonSalesPrice,
+            UpdatedAtUtcTicks = DateTimeOffset.UtcNow.UtcDateTime.Ticks
+        });
+
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
         return item.Id;
     }

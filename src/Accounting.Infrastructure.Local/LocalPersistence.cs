@@ -56,6 +56,7 @@ public sealed class LocalAccountingDbContext : DbContext
     public DbSet<LocalSequenceCounter> LocalSequenceCounters => Set<LocalSequenceCounter>();
     public DbSet<LocalModuleConfiguration> LocalModuleConfigurations => Set<LocalModuleConfiguration>();
     public DbSet<LocalCompanyBrandingSettings> LocalCompanyBrandingSettings => Set<LocalCompanyBrandingSettings>();
+    public DbSet<LocalItemCommercialSettings> LocalItemCommercialSettings => Set<LocalItemCommercialSettings>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -105,6 +106,16 @@ public sealed class LocalAccountingDbContext : DbContext
             b.HasKey(x => x.Id);
             b.HasIndex(x => new { x.CompanyId, x.BranchId }).IsUnique();
             b.Property(x => x.TaxRate).HasPrecision(38, 12);
+        });
+        m.Entity<LocalItemCommercialSettings>(b =>
+        {
+            b.ToTable("LocalItemCommercialSettings");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => new { x.CompanyId, x.BranchId, x.ItemId }).IsUnique();
+            b.HasIndex(x => new { x.CompanyId, x.BranchId, x.CartonBarcode });
+            b.Property(x => x.BaseSalesPrice).HasPrecision(38, 12);
+            b.Property(x => x.OpeningUnitCost).HasPrecision(38, 12);
+            b.Property(x => x.CartonSalesPrice).HasPrecision(38, 12);
         });
 
         m.Entity<CommercialDocument>(b =>
