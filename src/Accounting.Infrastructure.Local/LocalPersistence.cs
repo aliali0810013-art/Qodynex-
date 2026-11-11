@@ -55,6 +55,7 @@ public sealed class LocalAccountingDbContext : DbContext
     public DbSet<LocalSyncConflict> LocalSyncConflicts => Set<LocalSyncConflict>();
     public DbSet<LocalSequenceCounter> LocalSequenceCounters => Set<LocalSequenceCounter>();
     public DbSet<LocalModuleConfiguration> LocalModuleConfigurations => Set<LocalModuleConfiguration>();
+    public DbSet<LocalCompanyBrandingSettings> LocalCompanyBrandingSettings => Set<LocalCompanyBrandingSettings>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -97,6 +98,13 @@ public sealed class LocalAccountingDbContext : DbContext
             b.ToTable("LocalModuleConfigurations");
             b.HasKey(x => x.Id);
             b.HasIndex(x => new { x.CompanyId, x.BranchId, x.ModuleKey }).IsUnique();
+        });
+        m.Entity<LocalCompanyBrandingSettings>(b =>
+        {
+            b.ToTable("LocalCompanyBrandingSettings");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => new { x.CompanyId, x.BranchId }).IsUnique();
+            b.Property(x => x.TaxRate).HasPrecision(38, 12);
         });
 
         m.Entity<CommercialDocument>(b =>
