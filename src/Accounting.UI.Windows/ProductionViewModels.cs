@@ -281,6 +281,10 @@ public sealed class ReportsSyncViewModel : ObservableObject, IWorkspaceActionTar
 
 public sealed partial class ShellViewModel
 {
+    private string _productionCompanyName = "Qodynex";
+    private string _productionCurrency = "YER";
+    public string ProductionCompanyName { get => _productionCompanyName; private set => Set(ref _productionCompanyName, value); }
+    public string ProductionCurrency { get => _productionCurrency; private set => Set(ref _productionCurrency, value); }
     public void OpenQuickSearch() => OpenTab("quick-search", "بحث سريع", new QuickSearchViewModel(_facade));
     public RelayCommand OpenDashboardCommand { get; private set; } = null!;
     public RelayCommand OpenVouchersWorkspaceCommand { get; private set; } = null!;
@@ -291,11 +295,23 @@ public sealed partial class ShellViewModel
     private void InitializeProductionNavigation(WindowsAccountingFacade facade, LocalSyncStore syncStore, UserContext user, IReadOnlyList<string> enabledModules)
     {
         var moduleKey=enabledModules.FirstOrDefault() ?? "RETAIL";
+        _ = LoadProductionHeaderAsync();
         OpenDashboardCommand=new RelayCommand(()=>OpenTab("dashboard","لوحة القيادة",new DashboardViewModel(facade,OpenTab)));
         OpenVouchersWorkspaceCommand=new RelayCommand(()=>OpenTab("vouchers","السندات المالية",new VouchersWorkspaceViewModel(facade,OpenTab)));
         OpenInventoryWorkspaceCommand=new RelayCommand(()=>{var vm=new ItemsViewModel(facade);_=vm.RefreshProductionAsync();OpenTab("inventory","المخزون والأصناف",vm);});
         OpenAccountsWorkspaceCommand=new RelayCommand(()=>OpenTab("accounts","الحسابات ودفتر الأستاذ",new AccountsWorkspaceViewModel(facade)));
         OpenReportsSyncCommand=new RelayCommand(()=>OpenTab("reports-sync","التقارير والمزامنة",new ReportsSyncViewModel(facade,syncStore,user)));
         OpenTab("dashboard","لوحة القيادة",new DashboardViewModel(facade,OpenTab));
+    }
+
+    private async Task LoadProductionHeaderAsync()
+    {
+        try
+        {
+            var profile = await _facade.GetCompanyProfileAsync().ConfigureAwait(true);
+            ProductionCompanyName = profile.CompanyName;
+            ProductionCurrency = profile.CurrencyCode;
+        }
+        catch { }
     }
 }
