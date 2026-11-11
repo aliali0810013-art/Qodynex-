@@ -164,7 +164,7 @@
         <Border Style="{StaticResource CardBorder}"><Grid>
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-          <StackPanel><TextBlock Text="الصندوق / البنك" Foreground="{StaticResource MutedBrush}"/><ComboBox ItemsSource="{Binding VoucherAccounts}" SelectedItem="{Binding SelectedCashAccount}" DisplayMemberPath="Name"/></StackPanel>
+          <StackPanel><TextBlock Text="الصندوق / البنك" Foreground="{StaticResource MutedBrush}"/><ComboBox ItemsSource="{Binding VoucherCashAccounts}" SelectedItem="{Binding SelectedCashAccount}" DisplayMemberPath="Name"/></StackPanel>
           <StackPanel Grid.Column="1"><TextBlock Text="العميل / المورد" Foreground="{StaticResource MutedBrush}"/><ComboBox ItemsSource="{Binding VoucherPartners}" SelectedItem="{Binding SelectedVoucherPartner}" DisplayMemberPath="Name"/></StackPanel>
           <StackPanel Grid.Row="1"><TextBlock Text="الحساب المقابل" Foreground="{StaticResource MutedBrush}"/><ComboBox ItemsSource="{Binding VoucherAccounts}" SelectedItem="{Binding SelectedCounterAccount}" DisplayMemberPath="Name"/></StackPanel>
           <StackPanel Grid.Row="1" Grid.Column="1"><TextBlock Text="المبلغ" Foreground="{StaticResource MutedBrush}"/><TextBox Text="{Binding Amount}" FontSize="20"/></StackPanel>
