@@ -115,9 +115,9 @@
           <Grid MinHeight="74">
             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="150"/><ColumnDefinition Width="150"/><ColumnDefinition Width="190"/></Grid.ColumnDefinitions>
             <TextBlock Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="4,4,16,4"/>
-            <StackPanel Grid.Column="1" Margin="12,4"><TextBlock Text="قبل الضريبة" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding Subtotal,StringFormat={}{0:N2}}" FontSize="20" FontWeight="Bold" Padding="0,4"/></StackPanel>
+            <StackPanel Grid.Column="1" Margin="12,4"><TextBlock Text="قبل الضريبة" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding Subtotal,StringFormat={}{0:N2}}" FontSize="20" FontWeight="Bold" Margin="0,4,0,0"/></StackPanel>
             <StackPanel Grid.Column="2" Margin="12,4"><TextBlock Text="الضريبة" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding Tax,StringFormat={}{0:N2}}" FontSize="20" FontWeight="Bold" Padding="0,4"/></StackPanel>
-            <StackPanel Grid.Column="3" Margin="12,4"><TextBlock Text="الصافي النهائي" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding GrandTotal,StringFormat={}{0:N2}}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Padding="0,5"/></StackPanel>
+            <StackPanel Grid.Column="3" Margin="12,4"><TextBlock Text="الصافي النهائي" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding GrandTotal,StringFormat={}{0:N2}}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Margin="0,5,0,0"/></StackPanel>
           </Grid>
         </Border>
       </Grid>
