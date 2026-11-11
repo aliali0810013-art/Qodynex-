@@ -19,6 +19,7 @@ public sealed class ProductionMobileShell : TabbedPage
         Children.Add(Wrap(new CollectionPage(runtime), "التحصيل"));
         Children.Add(Wrap(new ProductionStockPage(runtime), "المخزون"));
         Children.Add(Wrap(new StatementSyncPage(runtime), "الحساب/المزامنة"));
+        Children.Add(Wrap(new MobileSettingsPage(runtime), "الإعدادات"));
     }
 
     private static NavigationPage Wrap(Page page, string title)
