@@ -16,7 +16,7 @@ public sealed record LedgerRow(DateTimeOffset DateUtc, string Reference, string 
 public sealed record ItemMovementRow(DateTimeOffset DateUtc, string SourceType, decimal QuantityDelta, decimal InventoryValueDelta, decimal UnitCost);
 public sealed record TrialBalanceRow(Guid AccountId, string Code, string Name, decimal Debit, decimal Credit, decimal Balance);
 
-public sealed class WindowsAccountingFacade
+public sealed partial class WindowsAccountingFacade
 {
     private readonly LocalAccountingDbContext _db;
     private readonly AccountingPostingEngine _posting;
