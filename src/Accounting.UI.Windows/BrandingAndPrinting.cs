@@ -173,7 +173,7 @@ public static class InvoicePrintService
             var header=new Grid{Margin=new Thickness(0,0,0,12)};
             header.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(1, GridUnitType.Star)});
             header.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(170)});
-            header.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(1, GridUnitType.Star)));
+            header.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(1, GridUnitType.Star)});
             var company=new TextBlock{Text=$"{brand.ArabicName}\n{brand.BusinessDescription}",FontSize=15,FontWeight=FontWeights.Bold,TextAlignment=TextAlignment.Right,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};
             Grid.SetColumn(company,0);header.Children.Add(company);
             if(brand.LogoBytes is {Length:>0}){var img=new Image{Source=ToImage(brand.LogoBytes),Height=80,Stretch=Stretch.Uniform};Grid.SetColumn(img,1);header.Children.Add(img);}
