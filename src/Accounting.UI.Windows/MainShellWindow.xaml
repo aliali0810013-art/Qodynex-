@@ -58,7 +58,7 @@
           <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Border Style="{StaticResource CardBorder}">
+        <Border Style="{StaticResource CardBorder}" IsEnabled="{Binding IsEditable}">
           <Grid>
             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition Width="1.35*"/><ColumnDefinition Width="1.25*"/></Grid.ColumnDefinitions>
             <StackPanel Margin="4"><TextBlock Text="المستودع" Foreground="{StaticResource MutedBrush}" Margin="2,0,2,4"/><ComboBox ItemsSource="{Binding Warehouses}" SelectedItem="{Binding SelectedWarehouse}" DisplayMemberPath="Name"/></StackPanel>
@@ -76,14 +76,15 @@
           <Grid>
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="2*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <TextBox Text="{Binding BarcodeInput, UpdateSourceTrigger=PropertyChanged}" FontSize="16" ToolTip="باركود / SKU - الماسح يضيف تلقائياً"/>
+            <TextBox Text="{Binding BarcodeInput, UpdateSourceTrigger=PropertyChanged}" FontSize="16" ToolTip="باركود / SKU - الماسح يضيف تلقائياً" IsEnabled="{Binding IsEditable}"/>
             <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableItems}" SelectedItem="{Binding SelectedSearchItem}" DisplayMemberPath="Name"
-                      IsEditable="True" IsTextSearchEnabled="True" TextSearch.TextPath="Name" ToolTip="ابحث باسم الصنف أو اختره"/>
-            <Button Grid.Column="2" Style="{StaticResource PrimaryButton}" Content="+ إضافة سطر صنف (Insert)" Command="{Binding AddSelectedItemCommand}"/>
+                      IsEditable="True" IsTextSearchEnabled="True" TextSearch.TextPath="Name" ToolTip="ابحث باسم الصنف أو اختره" IsEnabled="{Binding IsEditable}"/>
+            <Button Grid.Column="2" Style="{StaticResource PrimaryButton}" Content="+ إضافة سطر صنف (Insert)" Command="{Binding AddSelectedItemCommand}" IsEnabled="{Binding IsEditable}"/>
             <Button Grid.Column="3" Content="بحث F3" Command="{Binding SearchCommand}"/>
-            <Button Grid.Column="4" Content="حذف السطر" Command="{Binding RemoveLineCommand}"/>
+            <Button Grid.Column="4" Content="حذف السطر" Command="{Binding RemoveLineCommand}" IsEnabled="{Binding IsEditable}"/>
             <StackPanel Grid.Row="1" Grid.ColumnSpan="5" Orientation="Horizontal" HorizontalAlignment="Left" Margin="2,6,2,0">
-              <Button Style="{StaticResource PrimaryButton}" Content="حفظ وترحيل F5" Command="{Binding SaveCommand}"/>
+              <Button Style="{StaticResource PrimaryButton}" Content="حفظ وترحيل F5" Command="{Binding SaveCommand}" IsEnabled="{Binding IsEditable}"/>
+              <Button Content="+ فاتورة جديدة" Command="{Binding NewDocumentCommand}"/>
               <Button Content="طباعة فاتورة مبسطة (80mm)" Command="{Binding PrintThermalCommand}"/>
               <Button Content="طباعة فاتورة A4 رسمية" Command="{Binding PrintA4Command}"/>
               <Button Content="الفواتير السابقة / مرتجع" Command="{Binding OpenInvoiceHistoryCommand}"/>
@@ -92,7 +93,7 @@
         </Border>
 
         <DataGrid Grid.Row="2" ItemsSource="{Binding Lines}" SelectedItem="{Binding SelectedLine}" Margin="6,10"
-                  IsReadOnly="False" CanUserAddRows="False" SelectionUnit="CellOrRowHeader">
+                  IsReadOnly="False" IsHitTestVisible="{Binding IsEditable}" CanUserAddRows="False" SelectionUnit="CellOrRowHeader">
           <DataGrid.Columns>
             <DataGridTemplateColumn Header="الصنف" Width="2*">
               <DataGridTemplateColumn.CellTemplate><DataTemplate>
@@ -116,7 +117,10 @@
         <Border Grid.Row="3" Style="{StaticResource CardBorder}" Padding="16,12">
           <Grid MinHeight="74">
             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="150"/><ColumnDefinition Width="150"/><ColumnDefinition Width="190"/></Grid.ColumnDefinitions>
-            <TextBlock Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="4,4,16,4"/>
+            <StackPanel VerticalAlignment="Center" Margin="4,4,16,4">
+              <TextBlock Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
+              <TextBlock Margin="0,6,0,0"><Run Text="رقم المستند: "/><Run Text="{Binding DocumentNumber}" FontWeight="Bold"/><Run Text="   التاريخ: "/><Run Text="{Binding DocumentDate,StringFormat={}{0:yyyy-MM-dd HH:mm}}" FontWeight="Bold"/></TextBlock>
+            </StackPanel>
             <StackPanel Grid.Column="1" Margin="12,4"><TextBlock Text="قبل الضريبة" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding Subtotal,StringFormat={}{0:N2}}" FontSize="20" FontWeight="Bold" Margin="0,4,0,0"/></StackPanel>
             <StackPanel Grid.Column="2" Margin="12,4"><TextBlock Text="الضريبة" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding Tax,StringFormat={}{0:N2}}" FontSize="20" FontWeight="Bold" Padding="0,4"/></StackPanel>
             <StackPanel Grid.Column="3" Margin="12,4"><TextBlock Text="الصافي النهائي" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding GrandTotal,StringFormat={}{0:N2}}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Margin="0,5,0,0"/></StackPanel>
