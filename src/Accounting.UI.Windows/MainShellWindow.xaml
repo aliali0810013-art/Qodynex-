@@ -94,7 +94,7 @@
           <DataGrid.Columns>
             <DataGridTemplateColumn Header="الصنف" Width="2*">
               <DataGridTemplateColumn.CellTemplate><DataTemplate>
-                <ComboBox ItemsSource="{Binding DataContext.AvailableItems, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                <ComboBox ItemsSource="{Binding DataContext.AvailableItems, RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}}"
                           SelectedItem="{Binding SelectedItem,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}"
                           DisplayMemberPath="Name" IsEditable="True" IsTextSearchEnabled="True" TextSearch.TextPath="Name"
                           SelectionChanged="OnInvoiceLineItemChanged"/>
