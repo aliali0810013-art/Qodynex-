@@ -138,6 +138,7 @@ public sealed class StatementSyncPage : ContentPage
         }
         catch (Exception ex) { _status.Text = ex.Message; }
     }
+}
 
 public sealed class ProductionStockPage : ContentPage
 {
@@ -231,6 +232,4 @@ public sealed class ProductionStockPage : ContentPage
         }
         catch (Exception ex) { _status.Text = ex.Message; }
     }
-}
-
 }
