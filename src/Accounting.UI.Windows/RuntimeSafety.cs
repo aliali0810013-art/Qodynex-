@@ -38,7 +38,7 @@ public static class RuntimeErrorHub
                 : $"{exception.Message} — {exception.InnerException.Message}",
             timestamp);
 
-        var dispatcher = Application.Current?.Dispatcher;
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
         if (dispatcher is null || dispatcher.HasShutdownStarted)
         {
             ErrorRaised?.Invoke(null, args);
