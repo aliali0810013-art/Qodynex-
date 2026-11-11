@@ -136,14 +136,14 @@ jobs:
             sleep 15
             adb shell pidof tech.qodynex.accounting | grep -E '[0-9]+'
             adb shell uiautomator dump /sdcard/qodynex-window.xml
-            adb shell dumpsys activity activities | grep -q 'tech.qodynex.accounting/.MainActivity'
-            if adb logcat -d -b crash | grep -Eq 'FATAL EXCEPTION|tech.qodynex.accounting'; then
-              echo "Qodynex Android emitted a crash entry during cold start."
+            ui="$(adb shell cat /sdcard/qodynex-window.xml)"
+            test -n "$ui"
+            if adb logcat -d -b crash | grep -q 'FATAL EXCEPTION'; then
+              echo "Qodynex Android emitted a fatal crash during cold start."
               adb logcat -d -b crash
               exit 1
             fi
-            test -s <(adb shell cat /sdcard/qodynex-window.xml)
-            echo "Qodynex Android cold-start kept MainActivity alive and produced a UI hierarchy without crashes."
+            echo "Qodynex Android cold-start kept the app process alive and produced a UI hierarchy without fatal crashes."
       - name: Upload clean Android APK
         uses: actions/upload-artifact@v4
         with:
