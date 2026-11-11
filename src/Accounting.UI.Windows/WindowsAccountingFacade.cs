@@ -9,7 +9,7 @@ namespace Accounting.UI.Windows;
 
 public sealed record ItemLookup(Guid Id, string Sku, string Name, string? Barcode, Guid BaseUnitOfMeasureId, ItemKind ItemKind);
 public sealed record ItemUnitOption(Guid UnitOfMeasureId, string Code, string Name, decimal BaseUnitsPerUnit);
-public sealed record PartnerLookup(Guid Id, string Code, string Name, Guid ControlAccountId, decimal CreditLimit);
+public sealed record PartnerLookup(Guid Id, string Code, string Name, Guid ControlAccountId, decimal CreditLimit, PartnerType PartnerType);
 public sealed record AccountLookup(Guid Id, string Code, string Name);
 public sealed record InvoiceDraftLine(Guid ItemId, Guid UnitOfMeasureId, decimal Quantity, decimal BaseUnitsPerUnit, decimal UnitPrice);
 public sealed record LedgerRow(DateTimeOffset DateUtc, string Reference, string Description, decimal Debit, decimal Credit, decimal RunningBalance);
@@ -58,9 +58,29 @@ public sealed partial class WindowsAccountingFacade
             .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive
                 && (text == "" || x.Code.Contains(text) || x.Name.Contains(text)))
             .OrderBy(x => x.Name).Take(50)
-            .Select(x => new PartnerLookup(x.Id, x.Code, x.Name, x.ControlAccountId, x.CreditLimit))
+            .Select(x => new PartnerLookup(x.Id, x.Code, x.Name, x.ControlAccountId, x.CreditLimit, x.PartnerType))
             .ToListAsync(ct).ConfigureAwait(false);
     }
+
+    public async Task<IReadOnlyList<PartnerLookup>> SearchPartnersByTypeAsync(PartnerType type, string text = "", CancellationToken ct = default)
+    {
+        text = text.Trim();
+        return await _db.BusinessPartners.AsNoTracking()
+            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive
+                && (x.PartnerType == type || x.PartnerType == PartnerType.Both)
+                && (text == "" || x.Code.Contains(text) || x.Name.Contains(text)))
+            .OrderBy(x => x.Name).Take(100)
+            .Select(x => new PartnerLookup(x.Id, x.Code, x.Name, x.ControlAccountId, x.CreditLimit, x.PartnerType))
+            .ToListAsync(ct).ConfigureAwait(false);
+    }
+
+    public Task<List<AccountLookup>> GetCashBankAccountsAsync(CancellationToken ct = default) =>
+        _db.Accounts.AsNoTracking()
+            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive && x.IsPostable
+                && (x.Code.StartsWith("111") || x.Code.StartsWith("112")))
+            .OrderBy(x => x.Code)
+            .Select(x => new AccountLookup(x.Id, x.Code, x.Name))
+            .ToListAsync(ct);
 
     public async Task<IReadOnlyList<AccountLookup>> SearchAccountsAsync(string text, CancellationToken ct = default)
     {
