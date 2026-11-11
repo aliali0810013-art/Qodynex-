@@ -24,6 +24,7 @@ public sealed record ManualJournalLine(Guid AccountId, decimal Debit, decimal Cr
 public sealed record UnitLookup(Guid Id, string Code, string Name);
 public sealed record InvoiceHistoryRow(Guid Id, string Kind, string LocalNumber, string OfficialNumber, DateTimeOffset DateUtc, string PartnerName, decimal Total, bool IsReversed);
 public sealed record InvoiceHistoryLineRow(string Sku, string Name, string UnitName, decimal Quantity, decimal UnitPrice, decimal Total);
+public sealed record DocumentPrintInfo(string LocalNumber, string OfficialNumber, DateTimeOffset DateUtc);
 
 public sealed partial class WindowsAccountingFacade
 {
@@ -280,6 +281,20 @@ public sealed partial class WindowsAccountingFacade
         _db.BusinessPartners.Add(partner);
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
         return new PartnerLookup(partner.Id, partner.Code, partner.Name, partner.ControlAccountId, partner.CreditLimit, partner.PartnerType);
+    }
+
+    public async Task<DocumentPrintInfo> GetDocumentPrintInfoAsync(bool sales, Guid documentId, CancellationToken ct = default)
+    {
+        var official = await _db.OfficialSequenceAssignments.AsNoTracking()
+            .Where(x => x.DocumentId == documentId).Select(x => x.OfficialSequenceNumber)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false) ?? "-";
+        if (sales)
+        {
+            var d=await _db.SalesInvoices.AsNoTracking().SingleAsync(x=>x.Id==documentId&&x.CompanyId==_user.CompanyId&&x.BranchId==_user.BranchId,ct).ConfigureAwait(false);
+            return new(d.LocalTempNumber,official,d.DocumentDateUtc);
+        }
+        var p=await _db.PurchaseInvoices.AsNoTracking().SingleAsync(x=>x.Id==documentId&&x.CompanyId==_user.CompanyId&&x.BranchId==_user.BranchId,ct).ConfigureAwait(false);
+        return new(p.LocalTempNumber,official,p.DocumentDateUtc);
     }
 
     public async Task<IReadOnlyList<InvoiceHistoryRow>> GetInvoiceHistoryAsync(bool sales, CancellationToken ct = default)
