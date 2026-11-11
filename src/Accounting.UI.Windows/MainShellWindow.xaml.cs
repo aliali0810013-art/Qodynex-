@@ -34,11 +34,43 @@ public partial class MainShellWindow : Window
 
     private async void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key is Key.F2 or Key.F3 or Key.F5 or Key.F7)
+        if (e.Key == Key.F2) { e.Handled = true; _viewModel.OpenSalesCommand.Execute(null); return; }
+        if (e.Key == Key.F3) { e.Handled = true; _viewModel.OpenQuickSearch(); return; }
+        if (e.Key is Key.F5 or Key.F7)
         {
             e.Handled = true;
             await _viewModel.Shortcuts.HandleAsync(e.Key).ConfigureAwait(true);
+            return;
         }
+        if (e.Key == Key.F9)
+        {
+            e.Handled = true;
+            await SyncNowAsync().ConfigureAwait(true);
+        }
+    }
+
+    private void OnNewClick(object sender, RoutedEventArgs e) => _viewModel.OpenSalesCommand.Execute(null);
+
+    private void OnQuickSearchClick(object sender, RoutedEventArgs e) => _viewModel.OpenQuickSearch();
+
+    private async void OnSavePostClick(object sender, RoutedEventArgs e) =>
+        await _viewModel.Shortcuts.HandleAsync(Key.F5).ConfigureAwait(true);
+
+    private async void OnDetailsClick(object sender, RoutedEventArgs e) =>
+        await _viewModel.Shortcuts.HandleAsync(Key.F7).ConfigureAwait(true);
+
+    private async void OnSyncNowClick(object sender, RoutedEventArgs e) =>
+        await SyncNowAsync().ConfigureAwait(true);
+
+    private async Task SyncNowAsync()
+    {
+        if (_syncCoordinator is not null)
+        {
+            try { await _syncCoordinator.RunOnceAsync(_lifetime.Token).ConfigureAwait(true); }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { MessageBox.Show(ex.Message, "المزامنة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        }
+        await _viewModel.RefreshStatusAsync().ConfigureAwait(true);
     }
 
     private void OnCloseTabClick(object sender, RoutedEventArgs e)
