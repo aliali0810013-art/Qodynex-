@@ -30,11 +30,14 @@ public static class ThemeManager
     public static void Apply(bool dark)
     {
         IsDark = dark;
+        var app = System.Windows.Application.Current;
+        if (app is null) return;
+
         var palette = dark ? Dark : Light;
         foreach (var pair in palette)
         {
-            if (System.Windows.Application.Current.TryFindResource(pair.Key) is SolidColorBrush brush)
-                brush.Color = (Color)ColorConverter.ConvertFromString(pair.Value);
+            var color = (Color)ColorConverter.ConvertFromString(pair.Value);
+            app.Resources[pair.Key] = new SolidColorBrush(color);
         }
     }
 
