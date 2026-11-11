@@ -38,6 +38,25 @@ public static class ThemeManager
         }
     }
 
+    public static bool PaletteHasReadableContrast(bool dark)
+    {
+        var p = dark ? Dark : Light;
+        return Contrast(p["TextBrush"], p["InputBrush"]) >= 7d
+            && Contrast(p["TextBrush"], p["CardBrush"]) >= 7d
+            && Contrast(p["SelectionTextBrush"], p["SelectionBrush"]) >= 4.5d;
+    }
+
+    private static double Contrast(string a, string b)
+    {
+        static double L(string hex)
+        {
+            var c=(Color)ColorConverter.ConvertFromString(hex);
+            static double F(byte v){var s=v/255d;return s<=0.03928?s/12.92:Math.Pow((s+0.055)/1.055,2.4);}
+            return 0.2126*F(c.R)+0.7152*F(c.G)+0.0722*F(c.B);
+        }
+        var l1=L(a);var l2=L(b);if(l1<l2)(l1,l2)=(l2,l1);return (l1+0.05)/(l2+0.05);
+    }
+
     public static bool IsLightBackground(string resourceKey)
     {
         if (Application.Current.TryFindResource(resourceKey) is not SolidColorBrush brush) return false;
