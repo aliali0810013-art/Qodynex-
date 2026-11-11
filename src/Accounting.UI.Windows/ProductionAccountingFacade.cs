@@ -42,9 +42,11 @@ public sealed partial class WindowsAccountingFacade
                      && x.DocumentDateUtc >= new DateTimeOffset(today, TimeSpan.Zero)
                      && x.DocumentDateUtc < new DateTimeOffset(tomorrow, TimeSpan.Zero))
             .Select(x => x.Id);
-        var sales = await _db.SalesInvoiceLines.AsNoTracking()
+        var salesValues = await _db.SalesInvoiceLines.AsNoTracking()
             .Where(x => postedSalesIds.Contains(x.SalesInvoiceId))
-            .SumAsync(x => (decimal?)(x.Quantity * x.UnitPrice), ct).ConfigureAwait(false) ?? 0m;
+            .Select(x => new { x.Quantity, x.UnitPrice })
+            .ToListAsync(ct).ConfigureAwait(false);
+        var sales = salesValues.Sum(x => x.Quantity * x.UnitPrice);
 
         var cashAccountIds = await _db.Accounts.AsNoTracking()
             .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId
@@ -56,9 +58,11 @@ public sealed partial class WindowsAccountingFacade
 
         var itemCount = await _db.Items.AsNoTracking()
             .CountAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive, ct).ConfigureAwait(false);
-        var inventoryValue = await _db.StockLedgerEntries.AsNoTracking()
+        var inventoryValues = await _db.StockLedgerEntries.AsNoTracking()
             .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId)
-            .SumAsync(x => (decimal?)x.InventoryValueDelta, ct).ConfigureAwait(false) ?? 0m;
+            .Select(x => x.InventoryValueDelta)
+            .ToListAsync(ct).ConfigureAwait(false);
+        var inventoryValue = inventoryValues.Sum();
         var pending = await _db.OutboxMessages.AsNoTracking()
             .CountAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId
                           && (x.Status == OutboxStatus.Pending || x.Status == OutboxStatus.Failed), ct).ConfigureAwait(false);
@@ -70,10 +74,10 @@ public sealed partial class WindowsAccountingFacade
         var recent = new List<RecentJournalRow>(recentBase.Count);
         foreach (var row in recentBase)
         {
-            var sums = await _db.JournalLines.AsNoTracking().Where(x => x.JournalEntryId == row.Id)
-                .GroupBy(_ => 1).Select(g => new { Debit = g.Sum(x => x.Debit), Credit = g.Sum(x => x.Credit) })
-                .SingleOrDefaultAsync(ct).ConfigureAwait(false);
-            recent.Add(new(row.Id, row.EntryDateUtc, row.Reference, row.Description, sums?.Debit ?? 0m, sums?.Credit ?? 0m));
+            var journalValues = await _db.JournalLines.AsNoTracking().Where(x => x.JournalEntryId == row.Id)
+                .Select(x => new { x.Debit, x.Credit }).ToListAsync(ct).ConfigureAwait(false);
+            recent.Add(new(row.Id, row.EntryDateUtc, row.Reference, row.Description,
+                journalValues.Sum(x => x.Debit), journalValues.Sum(x => x.Credit)));
         }
 
         return new(sales, cash, itemCount, inventoryValue, pending, recent);
@@ -136,10 +140,10 @@ public sealed partial class WindowsAccountingFacade
         var result = new List<JournalHeaderRow>(rows.Count);
         foreach (var row in rows)
         {
-            var sums = await _db.JournalLines.AsNoTracking().Where(x => x.JournalEntryId == row.Id)
-                .GroupBy(_ => 1).Select(g => new { Debit = g.Sum(x => x.Debit), Credit = g.Sum(x => x.Credit) }).SingleOrDefaultAsync(ct).ConfigureAwait(false);
+            var journalValues = await _db.JournalLines.AsNoTracking().Where(x => x.JournalEntryId == row.Id)
+                .Select(x => new { x.Debit, x.Credit }).ToListAsync(ct).ConfigureAwait(false);
             result.Add(new(row.Id, row.EntryDateUtc, row.Reference, row.Description, row.SourceDocumentType, row.SourceDocumentId,
-                sums?.Debit ?? 0m, sums?.Credit ?? 0m, row.ReversedEntryId.HasValue));
+                journalValues.Sum(x => x.Debit), journalValues.Sum(x => x.Credit), row.ReversedEntryId.HasValue));
         }
         return result;
     }
