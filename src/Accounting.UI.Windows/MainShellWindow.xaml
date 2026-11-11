@@ -610,7 +610,7 @@
         <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
           <Viewbox Width="18" Height="18" Margin="0,0,8,0">
-            <Path Data="M12,2 L22,20 H2 Z M12,8 V13 M12,16 V17" Stroke="{StaticResource OrangeBrush}" StrokeThickness="1.8" StrokeLineCap="Round"/>
+            <Path Data="M12,2 L22,20 H2 Z M12,8 V13 M12,16 V17" Stroke="{StaticResource OrangeBrush}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
           </Viewbox>
           <TextBlock x:Name="RuntimeErrorText" Text="حدث خطأ وتم تسجيله دون إيقاف البرنامج."
                      Foreground="{StaticResource TextBrush}" TextWrapping="Wrap" VerticalAlignment="Center"/>
