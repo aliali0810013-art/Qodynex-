@@ -38,6 +38,18 @@
   <Geometry x:Key="IconReports">M5,20 V11 H9 V20 M10,20 V5 H14 V20 M15,20 V8 H19 V20</Geometry>
   <Geometry x:Key="IconSync">M5,8 A8,8 0 0 1 19,7 L21,5 V11 H15 L17,9 A6,6 0 0 0 7,10 M19,16 A8,8 0 0 1 5,17 L3,19 V13 H9 L7,15 A6,6 0 0 0 17,14</Geometry>
   <Geometry x:Key="IconSettings">M12,2 L14,5 L18,5 L19,9 L22,11 L20,15 L21,19 L17,21 L14,20 L12,23 L9,20 L5,21 L3,17 L4,14 L1,11 L4,8 L3,4 L7,3 L9,5 Z M12,9 A3,3 0 1 0 12,15 A3,3 0 1 0 12,9</Geometry>
+  <Geometry x:Key="IconAction">M5,12 H19 M14,7 L19,12 L14,17</Geometry>
+  <Geometry x:Key="IconAdd">M12,4 V20 M4,12 H20</Geometry>
+  <Geometry x:Key="IconSearch">M10.5,4 A6.5,6.5 0 1 0 10.5,17 A6.5,6.5 0 1 0 10.5,4 M15.5,15.5 L21,21</Geometry>
+  <Geometry x:Key="IconSave">M4,3 H18 L21,6 V21 H3 V3 Z M7,3 V9 H16 V3 M7,14 H17 V20 H7 Z</Geometry>
+  <Geometry x:Key="IconPrint">M6,8 V3 H18 V8 M6,17 H4 A2,2 0 0 1 2,15 V10 A2,2 0 0 1 4,8 H20 A2,2 0 0 1 22,10 V15 A2,2 0 0 1 20,17 H18 M6,14 H18 V21 H6 Z</Geometry>
+  <Geometry x:Key="IconDelete">M5,7 H19 M9,7 V4 H15 V7 M7,7 L8,21 H16 L17,7 M10,11 V17 M14,11 V17</Geometry>
+  <Geometry x:Key="IconReverse">M8,7 H19 V18 H8 M8,7 L12,3 M8,7 L12,11 M16,14 H5 V6</Geometry>
+  <Geometry x:Key="IconUser">M12,3 A4,4 0 1 0 12,11 A4,4 0 1 0 12,3 M4,21 A8,7 0 0 1 20,21</Geometry>
+  <Geometry x:Key="IconUpload">M12,16 V4 M7,9 L12,4 L17,9 M4,15 V21 H20 V15</Geometry>
+  <Geometry x:Key="IconBackup">M4,5 H20 V20 H4 Z M7,5 V10 H17 V5 M8,14 H16 V18 H8 Z M2,8 A10,10 0 0 0 4,19</Geometry>
+  <Geometry x:Key="IconTheme">M15,3 A9,9 0 1 0 21,17 A7,7 0 0 1 15,3</Geometry>
+  <Geometry x:Key="IconClose">M6,6 L18,18 M18,6 L6,18</Geometry>
 
   <Style TargetType="Window">
     <Setter Property="Background" Value="{StaticResource Bg0Brush}"/>
@@ -67,6 +79,41 @@
     <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
   </Style>
   <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+    <Setter Property="Background" Value="#FEF2F2"/>
+    <Setter Property="Foreground" Value="#991B1B"/>
+    <Setter Property="BorderBrush" Value="{StaticResource RedBrush}"/>
+  </Style>
+
+  <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Button">
+          <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+              <Viewbox Width="17" Height="17" Margin="0,0,8,0">
+                <Path Data="{TemplateBinding Tag}" Stroke="{TemplateBinding Foreground}" StrokeThickness="1.7"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+              </Viewbox>
+              <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center"/>
+            </StackPanel>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="Opacity" Value="0.88"/></Trigger>
+            <Trigger Property="IsPressed" Value="True"><Setter TargetName="Chrome" Property="Opacity" Value="0.72"/></Trigger>
+            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Chrome" Property="Opacity" Value="0.45"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="PrimaryIconButton" TargetType="Button" BasedOn="{StaticResource IconButton}">
+    <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+    <Setter Property="Foreground" Value="White"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
+  </Style>
+  <Style x:Key="DangerIconButton" TargetType="Button" BasedOn="{StaticResource IconButton}">
     <Setter Property="Background" Value="#FEF2F2"/>
     <Setter Property="Foreground" Value="#991B1B"/>
     <Setter Property="BorderBrush" Value="{StaticResource RedBrush}"/>
