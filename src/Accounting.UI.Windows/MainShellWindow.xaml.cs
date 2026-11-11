@@ -1,4 +1,6 @@
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Accounting.Sync.Client;
@@ -61,6 +63,34 @@ public partial class MainShellWindow : Window
 
     private async void OnSyncNowClick(object sender, RoutedEventArgs e) =>
         await SyncNowAsync().ConfigureAwait(true);
+
+    private async void OnThemeToggleClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await _viewModel.ToggleThemeAsync().ConfigureAwait(true);
+            if (sender is Button button)
+                button.Content = ThemeManager.IsDark ? "☀️ وضع نهاري" : "🌙 وضع ليلي";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "المظهر", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void OnInvoiceLineItemChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ComboBox combo || combo.DataContext is not InvoiceLineViewModel line || combo.SelectedItem is not ItemLookup item)
+            return;
+        var current = combo as DependencyObject;
+        while (current is not null && current is not DataGrid)
+            current = VisualTreeHelper.GetParent(current);
+        if (current is DataGrid grid && grid.DataContext is InvoiceEditorViewModel vm)
+        {
+            try { await vm.ChangeLineItemAsync(line, item).ConfigureAwait(true); }
+            catch (Exception ex) { MessageBox.Show(ex.Message, "تغيير الصنف", MessageBoxButton.OK, MessageBoxImage.Warning); }
+        }
+    }
 
     private async Task SyncNowAsync()
     {
