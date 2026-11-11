@@ -151,42 +151,67 @@ public sealed class DashboardViewModel : ObservableObject, IWorkspaceActionTarge
 {
     private readonly WindowsAccountingFacade _facade;
     private readonly Action<string,string,object> _open;
-    private decimal _sales, _cash, _inventoryValue;
+    private decimal _sales, _purchases, _cash, _inventoryValue, _receivables;
     private int _items, _outbox;
     private string _company = "-", _currency = "YER", _status = "جاهز";
+
     public DashboardViewModel(WindowsAccountingFacade facade, Action<string,string,object> open)
     {
-        _facade = facade; _open = open;
+        _facade = facade;
+        _open = open;
         OpenSaleCommand = new RelayCommand(() => _open("sales","فاتورة مبيعات",new InvoiceEditorViewModel(_facade,_open,true,"RETAIL")));
+        OpenPurchaseCommand = new RelayCommand(() => _open("purchase","فاتورة مشتريات",new InvoiceEditorViewModel(_facade,_open,false,"RETAIL")));
         OpenReceiptCommand = new RelayCommand(() => _open("receipt","سند قبض",new VoucherEditorViewModel(_facade,_open,true)));
+        OpenPaymentCommand = new RelayCommand(() => _open("payment","سند صرف",new VoucherEditorViewModel(_facade,_open,false)));
+        OpenJournalCommand = new RelayCommand(() => _open("accounts","قيد يومية",new AccountsWorkspaceViewModel(_facade)));
         RefreshCommand = new AsyncRelayCommand(RefreshAsync);
         _ = RefreshAsync();
     }
+
     public decimal SalesTotal { get => _sales; private set => Set(ref _sales,value); }
+    public decimal PurchaseTotal { get => _purchases; private set => Set(ref _purchases,value); }
     public decimal CashBalance { get => _cash; private set => Set(ref _cash,value); }
     public decimal InventoryValue { get => _inventoryValue; private set => Set(ref _inventoryValue,value); }
+    public decimal CustomerReceivables { get => _receivables; private set => Set(ref _receivables,value); }
     public int ItemCount { get => _items; private set => Set(ref _items,value); }
     public int PendingOutbox { get => _outbox; private set => Set(ref _outbox,value); }
     public string CompanyName { get => _company; private set => Set(ref _company,value); }
     public string Currency { get => _currency; private set => Set(ref _currency,value); }
     public string Status { get => _status; private set => Set(ref _status,value); }
     public ObservableCollection<RecentJournalRow> RecentJournals { get; } = new();
+
     public RelayCommand OpenSaleCommand { get; }
+    public RelayCommand OpenPurchaseCommand { get; }
     public RelayCommand OpenReceiptCommand { get; }
+    public RelayCommand OpenPaymentCommand { get; }
+    public RelayCommand OpenJournalCommand { get; }
     public AsyncRelayCommand RefreshCommand { get; }
+
     public async Task RefreshAsync()
     {
         try
         {
-            var profileTask=_facade.GetCompanyProfileAsync(); var snapshotTask=_facade.GetDashboardAsync();
+            var profileTask=_facade.GetCompanyProfileAsync();
+            var snapshotTask=_facade.GetDashboardAsync();
             await Task.WhenAll(profileTask,snapshotTask).ConfigureAwait(true);
-            var p=profileTask.Result; var x=snapshotTask.Result;
-            CompanyName=p.CompanyName; Currency=p.CurrencyCode; SalesTotal=x.SalesTotal; CashBalance=x.CashAndBankBalance;
-            InventoryValue=x.InventoryValue; ItemCount=x.ItemCount; PendingOutbox=x.PendingOutbox;
-            RecentJournals.Clear(); foreach(var row in x.RecentJournals) RecentJournals.Add(row);
+            var p=profileTask.Result;
+            var x=snapshotTask.Result;
+            CompanyName=p.CompanyName;
+            Currency=p.CurrencyCode;
+            SalesTotal=x.SalesTotal;
+            PurchaseTotal=x.PurchaseTotal;
+            CashBalance=x.CashAndBankBalance;
+            InventoryValue=x.InventoryValue;
+            CustomerReceivables=x.CustomerReceivables;
+            ItemCount=x.ItemCount;
+            PendingOutbox=x.PendingOutbox;
+            RecentJournals.Clear();
+            foreach(var row in x.RecentJournals) RecentJournals.Add(row);
             Status=$"آخر تحديث {DateTime.Now:HH:mm:ss}";
-        } catch(Exception ex){ Status=ex.Message; }
+        }
+        catch(Exception ex){ Status=ex.Message; }
     }
+
     public Task SaveAndPostAsync()=>Task.CompletedTask;
     public Task QuickSearchAsync()=>Task.CompletedTask;
     public Task OpenSelectedDetailsAsync()=>Task.CompletedTask;

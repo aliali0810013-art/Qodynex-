@@ -19,30 +19,36 @@
               <TextBlock Text="لوحة القيادة" FontSize="28" FontWeight="Bold"/>
               <TextBlock Text="{Binding CompanyName}" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/>
             </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
-              <Button Style="{StaticResource PrimaryButton}" Content="+ فاتورة مبيعات" Command="{Binding OpenSaleCommand}"/>
-              <Button Content="+ سند قبض" Command="{Binding OpenReceiptCommand}"/>
+            <WrapPanel Grid.Column="1" HorizontalAlignment="Left">
+              <Button Style="{StaticResource PrimaryButton}" Content="فاتورة مبيعات" Command="{Binding OpenSaleCommand}"/>
+              <Button Content="فاتورة مشتريات" Command="{Binding OpenPurchaseCommand}"/>
+              <Button Content="سند قبض" Command="{Binding OpenReceiptCommand}"/>
+              <Button Content="سند صرف" Command="{Binding OpenPaymentCommand}"/>
+              <Button Content="قيد يومية" Command="{Binding OpenJournalCommand}"/>
               <Button Content="تحديث" Command="{Binding RefreshCommand}"/>
-            </StackPanel>
+            </WrapPanel>
           </Grid>
-          <UniformGrid Columns="5">
-            <Border Style="{StaticResource CardBorder}"><StackPanel><TextBlock Text="مبيعات اليوم" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding SalesTotal, StringFormat={}{0:N2}}" FontSize="26" FontWeight="Bold" Foreground="{StaticResource GoldBrush}"/><TextBlock Text="{Binding Currency}" Foreground="{StaticResource MutedBrush}"/></StackPanel></Border>
-            <Border Style="{StaticResource CardBorder}"><StackPanel><TextBlock Text="الصندوق والبنوك" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding CashBalance, StringFormat={}{0:N2}}" FontSize="26" FontWeight="Bold"/><TextBlock Text="{Binding Currency}" Foreground="{StaticResource MutedBrush}"/></StackPanel></Border>
-            <Border Style="{StaticResource CardBorder}"><StackPanel><TextBlock Text="قيمة المخزون" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding InventoryValue, StringFormat={}{0:N2}}" FontSize="26" FontWeight="Bold"/><TextBlock Text="{Binding Currency}" Foreground="{StaticResource MutedBrush}"/></StackPanel></Border>
-            <Border Style="{StaticResource CardBorder}"><StackPanel><TextBlock Text="عدد الأصناف" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding ItemCount}" FontSize="26" FontWeight="Bold" Foreground="{StaticResource BlueBrush}"/><TextBlock Text="صنف فعّال" Foreground="{StaticResource MutedBrush}"/></StackPanel></Border>
-            <Border Style="{StaticResource CardBorder}"><StackPanel><TextBlock Text="Outbox" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding PendingOutbox}" FontSize="26" FontWeight="Bold" Foreground="{StaticResource OrangeBrush}"/><TextBlock Text="عملية تنتظر المزامنة" Foreground="{StaticResource MutedBrush}"/></StackPanel></Border>
+
+          <UniformGrid Columns="3">
+            <Border Style="{StaticResource CardBorder}"><StackPanel><TextBlock Text="إجمالي مبيعات اليوم" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding SalesTotal,StringFormat={}{0:N2}}" FontSize="26" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"/><TextBlock Text="{Binding Currency}" Foreground="{StaticResource MutedBrush}"/></StackPanel></Border>
+            <Border Style="{StaticResource CardBorder}"><StackPanel><TextBlock Text="إجمالي مشتريات اليوم" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding PurchaseTotal,StringFormat={}{0:N2}}" FontSize="26" FontWeight="Bold" Foreground="{StaticResource GoldBrush}"/><TextBlock Text="{Binding Currency}" Foreground="{StaticResource MutedBrush}"/></StackPanel></Border>
+            <Border Style="{StaticResource CardBorder}"><StackPanel><TextBlock Text="رصيد الصندوق والبنك" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding CashBalance,StringFormat={}{0:N2}}" FontSize="26" FontWeight="Bold" Foreground="{StaticResource GreenBrush}"/><TextBlock Text="{Binding Currency}" Foreground="{StaticResource MutedBrush}"/></StackPanel></Border>
+            <Border Style="{StaticResource CardBorder}"><StackPanel><TextBlock Text="قيمة المخزون" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding InventoryValue,StringFormat={}{0:N2}}" FontSize="26" FontWeight="Bold"/><TextBlock Text="{Binding Currency}" Foreground="{StaticResource MutedBrush}"/></StackPanel></Border>
+            <Border Style="{StaticResource CardBorder}"><StackPanel><TextBlock Text="ذمم العملاء" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding CustomerReceivables,StringFormat={}{0:N2}}" FontSize="26" FontWeight="Bold" Foreground="{StaticResource OrangeBrush}"/><TextBlock Text="{Binding Currency}" Foreground="{StaticResource MutedBrush}"/></StackPanel></Border>
+            <Border Style="{StaticResource CardBorder}"><StackPanel><TextBlock Text="عمليات معلقة للمزامنة" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding PendingOutbox}" FontSize="26" FontWeight="Bold" Foreground="{StaticResource RedBrush}"/><TextBlock Text="عملية في Outbox" Foreground="{StaticResource MutedBrush}"/></StackPanel></Border>
           </UniformGrid>
+
           <Border Style="{StaticResource CardBorder}" Margin="6,14,6,6">
             <Grid>
               <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-              <TextBlock Text="آخر 10 قيود مرحّلة" FontSize="18" FontWeight="SemiBold" Margin="4,0,4,10"/>
-              <DataGrid Grid.Row="1" ItemsSource="{Binding RecentJournals}">
+              <TextBlock Text="آخر 15 عملية مالية مرحّلة" FontSize="18" FontWeight="SemiBold" Margin="4,0,4,10"/>
+              <DataGrid Grid.Row="1" ItemsSource="{Binding RecentJournals}" IsReadOnly="True">
                 <DataGrid.Columns>
-                  <DataGridTextColumn Header="التاريخ" Binding="{Binding DateUtc, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="170"/>
+                  <DataGridTextColumn Header="التاريخ" Binding="{Binding DateUtc,StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="170"/>
                   <DataGridTextColumn Header="المرجع" Binding="{Binding Reference}" Width="150"/>
                   <DataGridTextColumn Header="البيان" Binding="{Binding Description}" Width="*"/>
-                  <DataGridTextColumn Header="مدين" Binding="{Binding Debit, StringFormat={}{0:N2}}" Width="130"/>
-                  <DataGridTextColumn Header="دائن" Binding="{Binding Credit, StringFormat={}{0:N2}}" Width="130"/>
+                  <DataGridTextColumn Header="مدين" Binding="{Binding Debit,StringFormat={}{0:N2}}" Width="130"/>
+                  <DataGridTextColumn Header="دائن" Binding="{Binding Credit,StringFormat={}{0:N2}}" Width="130"/>
                 </DataGrid.Columns>
               </DataGrid>
             </Grid>

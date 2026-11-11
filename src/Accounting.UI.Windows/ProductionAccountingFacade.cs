@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Accounting.UI.Windows;
 
 public sealed record CompanyProfileRow(string CompanyName, string BranchName, string CurrencyCode);
-public sealed record DashboardSnapshot(decimal SalesTotal, decimal CashAndBankBalance, int ItemCount, decimal InventoryValue, int PendingOutbox, IReadOnlyList<RecentJournalRow> RecentJournals);
+public sealed record DashboardSnapshot(decimal SalesTotal, decimal PurchaseTotal, decimal CashAndBankBalance, int ItemCount, decimal InventoryValue, decimal CustomerReceivables, int PendingOutbox, IReadOnlyList<RecentJournalRow> RecentJournals);
 public sealed record RecentJournalRow(Guid Id, DateTimeOffset DateUtc, string Reference, string Description, decimal Debit, decimal Credit);
 public sealed record WarehouseLookup(Guid Id, string Code, string Name);
 public sealed record InventoryGridRow(Guid ItemId, string Sku, string Name, string UnitName, decimal Quantity, decimal InventoryValue, decimal AverageCost, string CartonText);
@@ -51,6 +51,18 @@ public sealed partial class WindowsAccountingFacade
             .ToListAsync(ct).ConfigureAwait(false);
         var sales = salesValues.Sum(x => x.Quantity * x.UnitPrice);
 
+        var postedPurchaseIds = _db.PurchaseInvoices.AsNoTracking()
+            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId
+                     && x.Status == PostingStatus.Posted
+                     && x.DocumentDateUtc >= new DateTimeOffset(today, TimeSpan.Zero)
+                     && x.DocumentDateUtc < new DateTimeOffset(tomorrow, TimeSpan.Zero))
+            .Select(x => x.Id);
+        var purchaseValues = await _db.PurchaseInvoiceLines.AsNoTracking()
+            .Where(x => postedPurchaseIds.Contains(x.PurchaseInvoiceId))
+            .Select(x => new { x.Quantity, x.UnitPrice })
+            .ToListAsync(ct).ConfigureAwait(false);
+        var purchases = purchaseValues.Sum(x => x.Quantity * x.UnitPrice);
+
         var cashAccountIds = await _db.Accounts.AsNoTracking()
             .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId
                      && x.IsPostable && (x.Code.StartsWith("111") || x.Code.StartsWith("112")))
@@ -58,6 +70,19 @@ public sealed partial class WindowsAccountingFacade
         decimal cash = 0m;
         foreach (var id in cashAccountIds)
             cash += (await _queries.GetAccountBalanceAsync(_user, id, ct).ConfigureAwait(false)).SignedBalance;
+
+        var receivableAccountIds = await _db.BusinessPartners.AsNoTracking()
+            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive
+                     && (x.PartnerType == PartnerType.Customer || x.PartnerType == PartnerType.Both))
+            .Select(x => x.ControlAccountId)
+            .Distinct()
+            .ToListAsync(ct).ConfigureAwait(false);
+        decimal customerReceivables = 0m;
+        foreach (var id in receivableAccountIds)
+        {
+            var balance = await _queries.GetAccountBalanceAsync(_user, id, ct).ConfigureAwait(false);
+            if (balance.SignedBalance > 0m) customerReceivables += balance.SignedBalance;
+        }
 
         var itemCount = await _db.Items.AsNoTracking()
             .CountAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive, ct).ConfigureAwait(false);
@@ -72,7 +97,7 @@ public sealed partial class WindowsAccountingFacade
 
         var recentBase = await _db.JournalEntries.AsNoTracking()
             .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.Status == PostingStatus.Posted)
-            .OrderByDescending(x => x.EntryDateUtc).ThenByDescending(x => x.Id).Take(10)
+            .OrderByDescending(x => x.EntryDateUtc).ThenByDescending(x => x.Id).Take(15)
             .Select(x => new { x.Id, x.EntryDateUtc, x.Reference, x.Description }).ToListAsync(ct).ConfigureAwait(false);
         var recent = new List<RecentJournalRow>(recentBase.Count);
         foreach (var row in recentBase)
@@ -83,7 +108,7 @@ public sealed partial class WindowsAccountingFacade
                 journalValues.Sum(x => x.Debit), journalValues.Sum(x => x.Credit)));
         }
 
-        return new(sales, cash, itemCount, inventoryValue, pending, recent);
+        return new(sales, purchases, cash, itemCount, inventoryValue, customerReceivables, pending, recent);
     }
 
     public Task<List<WarehouseLookup>> GetWarehousesAsync(CancellationToken ct = default) =>
