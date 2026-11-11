@@ -1,3 +1,4 @@
+using System.Windows.Media;
 using System.Collections.ObjectModel;
 using Accounting.Domain;
 using Accounting.Infrastructure.Local;
@@ -405,8 +406,10 @@ public sealed partial class ShellViewModel
 {
     private string _productionCompanyName = "Qodynex";
     private string _productionCurrency = "YER";
+    private ImageSource? _productionLogo;
     public string ProductionCompanyName { get => _productionCompanyName; private set => Set(ref _productionCompanyName, value); }
     public string ProductionCurrency { get => _productionCurrency; private set => Set(ref _productionCurrency, value); }
+    public ImageSource? ProductionLogo { get => _productionLogo; private set => Set(ref _productionLogo, value); }
     public void OpenQuickSearch() => OpenTab("quick-search", "بحث سريع", new QuickSearchViewModel(_facade));
     public RelayCommand OpenDashboardCommand { get; private set; } = null!;
     public RelayCommand OpenVouchersWorkspaceCommand { get; private set; } = null!;
@@ -428,13 +431,24 @@ public sealed partial class ShellViewModel
         OpenTab("dashboard","لوحة القيادة",new DashboardViewModel(facade,OpenTab));
     }
 
+    public async Task ToggleThemeAsync()
+    {
+        var current = await _facade.GetBrandingAsync().ConfigureAwait(true);
+        var updated = current with { DarkThemeEnabled = !ThemeManager.IsDark };
+        await _facade.SaveBrandingAsync(updated).ConfigureAwait(true);
+        ThemeManager.Apply(updated.DarkThemeEnabled);
+    }
+
     private async Task LoadProductionHeaderAsync()
     {
         try
         {
             var profile = await _facade.GetCompanyProfileAsync().ConfigureAwait(true);
-            ProductionCompanyName = profile.CompanyName;
-            ProductionCurrency = profile.CurrencyCode;
+            var branding = await _facade.GetBrandingAsync().ConfigureAwait(true);
+            ProductionCompanyName = string.IsNullOrWhiteSpace(branding.ArabicName) ? profile.CompanyName : branding.ArabicName;
+            ProductionCurrency = branding.CurrencyCode;
+            ProductionLogo = branding.LogoBytes is { Length: > 0 } ? CompanySettingsImageHelper.ToImage(branding.LogoBytes) : null;
+            ThemeManager.Apply(branding.DarkThemeEnabled);
         }
         catch { }
     }
