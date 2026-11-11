@@ -64,6 +64,14 @@ public sealed partial class MobileAccountingFacade
             .Select(x => new MobilePartner(x.Id, x.Code, x.Name, x.ControlAccountId, x.CreditLimit))
             .ToListAsync(ct);
 
+    public Task<List<MobileAccount>> GetCashBankAccountsAsync(CancellationToken ct = default) =>
+        _db.Accounts.AsNoTracking()
+            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive && x.IsPostable
+                     && (x.Code.StartsWith("111") || x.Code.StartsWith("112")))
+            .OrderBy(x => x.Code)
+            .Select(x => new MobileAccount(x.Id, x.Code, x.Name))
+            .ToListAsync(ct);
+
     public Task<List<MobileAccount>> GetPostableAccountsAsync(CancellationToken ct = default) =>
         _db.Accounts.AsNoTracking()
             .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.IsActive && x.IsPostable)
