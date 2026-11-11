@@ -22,6 +22,8 @@ public sealed record ConflictUiRow(Guid Id, string Code, string Message, DateTim
 public sealed record SyncCenterSnapshot(IReadOnlyList<OutboxUiRow> Outbox, IReadOnlyList<ConflictUiRow> Conflicts, DateTimeOffset? LastSync, string? LastError);
 public sealed record ManualJournalLine(Guid AccountId, decimal Debit, decimal Credit, string Memo);
 public sealed record UnitLookup(Guid Id, string Code, string Name);
+public sealed record InvoiceHistoryRow(Guid Id, string Kind, string LocalNumber, string OfficialNumber, DateTimeOffset DateUtc, string PartnerName, decimal Total, bool IsReversed);
+public sealed record InvoiceHistoryLineRow(string Sku, string Name, string UnitName, decimal Quantity, decimal UnitPrice, decimal Total);
 
 public sealed partial class WindowsAccountingFacade
 {
@@ -262,6 +264,82 @@ public sealed partial class WindowsAccountingFacade
             throw;
         }
     }
+    public async Task<PartnerLookup> CreateQuickPartnerAsync(bool customer, string name, string? phone, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException(customer ? "اسم العميل مطلوب." : "اسم المورد مطلوب.");
+        var controlCode = customer ? "1130" : "2110";
+        var control = await _db.Accounts.SingleAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.Code == controlCode, ct).ConfigureAwait(false);
+        var prefix = customer ? "C" : "S";
+        var count = await _db.BusinessPartners.CountAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId
+            && (customer ? x.PartnerType == PartnerType.Customer || x.PartnerType == PartnerType.Both : x.PartnerType == PartnerType.Supplier || x.PartnerType == PartnerType.Both), ct).ConfigureAwait(false);
+        string code;
+        do { code = $"{prefix}{++count:0000}"; }
+        while (await _db.BusinessPartners.AnyAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.Code == code, ct).ConfigureAwait(false));
+        var partner = new BusinessPartner(_user.CompanyId, _user.BranchId, code, name.Trim(),
+            customer ? PartnerType.Customer : PartnerType.Supplier, control.Id, phone, 0m);
+        _db.BusinessPartners.Add(partner);
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        return new PartnerLookup(partner.Id, partner.Code, partner.Name, partner.ControlAccountId, partner.CreditLimit, partner.PartnerType);
+    }
+
+    public async Task<IReadOnlyList<InvoiceHistoryRow>> GetInvoiceHistoryAsync(bool sales, CancellationToken ct = default)
+    {
+        var official = _db.OfficialSequenceAssignments.AsNoTracking();
+        var reversals = _db.DocumentReversalRecords.AsNoTracking();
+        var partners = _db.BusinessPartners.AsNoTracking();
+        if (sales)
+        {
+            var headers = await (from d in _db.SalesInvoices.AsNoTracking()
+                                 join p in partners on d.BusinessPartnerId equals (Guid?)p.Id into pg from p in pg.DefaultIfEmpty()
+                                 join o in official on d.Id equals o.DocumentId into og from o in og.DefaultIfEmpty()
+                                 join r in reversals on d.Id equals r.SourceDocumentId into rg from r in rg.DefaultIfEmpty()
+                                 where d.CompanyId == _user.CompanyId && d.BranchId == _user.BranchId && d.Status == PostingStatus.Posted
+                                 orderby d.DocumentDateUtc descending
+                                 select new { d.Id, d.LocalTempNumber, Official = o == null ? "-" : o.OfficialSequenceNumber,
+                                     d.DocumentDateUtc, Partner = p == null ? "عميل نقدي عام" : p.Name, IsReversed = r != null }).Take(200).ToListAsync(ct).ConfigureAwait(false);
+            var result=new List<InvoiceHistoryRow>(headers.Count);
+            foreach(var h in headers)
+            {
+                var values=await _db.SalesInvoiceLines.AsNoTracking().Where(x=>x.SalesInvoiceId==h.Id).Select(x=>new{x.Quantity,x.UnitPrice}).ToListAsync(ct).ConfigureAwait(false);
+                result.Add(new(h.Id,"مبيعات",h.LocalTempNumber,h.Official,h.DocumentDateUtc,h.Partner,values.Sum(x=>x.Quantity*x.UnitPrice),h.IsReversed));
+            }
+            return result;
+        }
+        else
+        {
+            var headers = await (from d in _db.PurchaseInvoices.AsNoTracking()
+                                 join p in partners on d.BusinessPartnerId equals (Guid?)p.Id into pg from p in pg.DefaultIfEmpty()
+                                 join o in official on d.Id equals o.DocumentId into og from o in og.DefaultIfEmpty()
+                                 join r in reversals on d.Id equals r.SourceDocumentId into rg from r in rg.DefaultIfEmpty()
+                                 where d.CompanyId == _user.CompanyId && d.BranchId == _user.BranchId && d.Status == PostingStatus.Posted
+                                 orderby d.DocumentDateUtc descending
+                                 select new { d.Id, d.LocalTempNumber, Official = o == null ? "-" : o.OfficialSequenceNumber,
+                                     d.DocumentDateUtc, Partner = p == null ? "-" : p.Name, IsReversed = r != null }).Take(200).ToListAsync(ct).ConfigureAwait(false);
+            var result=new List<InvoiceHistoryRow>(headers.Count);
+            foreach(var h in headers)
+            {
+                var values=await _db.PurchaseInvoiceLines.AsNoTracking().Where(x=>x.PurchaseInvoiceId==h.Id).Select(x=>new{x.Quantity,x.UnitPrice}).ToListAsync(ct).ConfigureAwait(false);
+                result.Add(new(h.Id,"مشتريات",h.LocalTempNumber,h.Official,h.DocumentDateUtc,h.Partner,values.Sum(x=>x.Quantity*x.UnitPrice),h.IsReversed));
+            }
+            return result;
+        }
+    }
+
+    public async Task<IReadOnlyList<InvoiceHistoryLineRow>> GetInvoiceHistoryLinesAsync(bool sales, Guid documentId, CancellationToken ct = default)
+    {
+        if (sales)
+            return await (from l in _db.SalesInvoiceLines.AsNoTracking()
+                          join i in _db.Items.AsNoTracking() on l.ItemId equals i.Id
+                          join u in _db.UnitOfMeasures.AsNoTracking() on l.UnitOfMeasureId equals u.Id
+                          where l.SalesInvoiceId == documentId
+                          select new InvoiceHistoryLineRow(i.Sku,i.Name,u.Name,l.Quantity,l.UnitPrice,l.Quantity*l.UnitPrice)).ToListAsync(ct).ConfigureAwait(false);
+        return await (from l in _db.PurchaseInvoiceLines.AsNoTracking()
+                      join i in _db.Items.AsNoTracking() on l.ItemId equals i.Id
+                      join u in _db.UnitOfMeasures.AsNoTracking() on l.UnitOfMeasureId equals u.Id
+                      where l.PurchaseInvoiceId == documentId
+                      select new InvoiceHistoryLineRow(i.Sku,i.Name,u.Name,l.Quantity,l.UnitPrice,l.Quantity*l.UnitPrice)).ToListAsync(ct).ConfigureAwait(false);
+    }
+
     public Task<List<UnitLookup>> GetUnitsAsync(CancellationToken ct = default) =>
         _db.UnitOfMeasures.AsNoTracking()
             .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId)
