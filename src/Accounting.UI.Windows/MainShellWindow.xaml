@@ -125,7 +125,7 @@
             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="150"/><ColumnDefinition Width="150"/><ColumnDefinition Width="190"/></Grid.ColumnDefinitions>
             <StackPanel VerticalAlignment="Center" Margin="4,4,16,4">
               <TextBlock Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"/>
-              <TextBlock Margin="0,6,0,0"><Run Text="رقم المستند: "/><Run Text="{Binding DocumentNumber}" FontWeight="Bold"/><Run Text="   التاريخ: "/><Run Text="{Binding DocumentDate,StringFormat={}{0:yyyy-MM-dd HH:mm}}" FontWeight="Bold"/></TextBlock>
+              <TextBlock Margin="0,6,0,0"><Run Text="رقم المستند: "/><Run Text="{Binding DocumentNumber,Mode=OneWay}" FontWeight="Bold"/><Run Text="   التاريخ: "/><Run Text="{Binding DocumentDate,Mode=OneWay,StringFormat={}{0:yyyy-MM-dd HH:mm}}" FontWeight="Bold"/></TextBlock>
             </StackPanel>
             <StackPanel Grid.Column="1" Margin="12,4"><TextBlock Text="قبل الضريبة" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding Subtotal,StringFormat={}{0:N2}}" FontSize="20" FontWeight="Bold" Margin="0,4,0,0"/></StackPanel>
             <StackPanel Grid.Column="2" Margin="12,4"><TextBlock Text="الضريبة" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding Tax,StringFormat={}{0:N2}}" FontSize="20" FontWeight="Bold" Padding="0,4"/></StackPanel>
@@ -187,7 +187,7 @@
           <Button Style="{StaticResource IconButton}" Content="طباعة A4 رسمية" Command="{Binding PrintA4Command}" MinWidth="130" Tag="{StaticResource IconPrint}"/>
         </StackPanel>
         <TextBlock Margin="6" TextWrapping="Wrap">
-          <Run Text="{Binding Status}"/><LineBreak/><Run Text="رقم السند: "/><Run Text="{Binding VoucherDocumentNumber}" FontWeight="Bold"/><Run Text="   التاريخ: "/><Run Text="{Binding VoucherDocumentDate,StringFormat={}{0:yyyy-MM-dd HH:mm}}" FontWeight="Bold"/>
+          <Run Text="{Binding Status}"/><LineBreak/><Run Text="رقم السند: "/><Run Text="{Binding VoucherDocumentNumber,Mode=OneWay}" FontWeight="Bold"/><Run Text="   التاريخ: "/><Run Text="{Binding VoucherDocumentDate,Mode=OneWay,StringFormat={}{0:yyyy-MM-dd HH:mm}}" FontWeight="Bold"/>
         </TextBlock>
       </StackPanel></ScrollViewer>
     </DataTemplate>
