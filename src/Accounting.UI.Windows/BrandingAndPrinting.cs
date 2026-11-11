@@ -298,6 +298,51 @@ public static class ReportPrintService
         return doc;
     }
 
+    public static FlowDocument BuildStockCard(
+        string itemName,
+        IEnumerable<ItemMovementRow> rows,
+        CompanyBrandingSnapshot brand)
+    {
+        var values = rows.ToArray();
+        var doc = CreateDocument(false);
+        AddHeader(doc, brand, false);
+        doc.Blocks.Add(new Paragraph(new Bold(new Run($"كرت الصنف — {itemName}")))
+        {
+            TextAlignment = TextAlignment.Center,
+            FontSize = 24,
+            Margin = new Thickness(0, 10, 0, 14)
+        });
+
+        var table = new Table { CellSpacing = 0 };
+        foreach (var width in new[] { 130d, 190d, 120d, 140d, 120d, 120d })
+            table.Columns.Add(new TableColumn { Width = new GridLength(width) });
+        var group = new TableRowGroup();
+        table.RowGroups.Add(group);
+        var header = new TableRow();
+        foreach (var text in new[] { "التاريخ", "المصدر", "الوارد/المنصرف", "قيمة الحركة", "تكلفة الوحدة", "الرصيد التراكمي" })
+            header.Cells.Add(Cell(text, true));
+        group.Rows.Add(header);
+
+        decimal running = 0m;
+        foreach (var row in values.OrderBy(x => x.DateUtc))
+        {
+            running += row.QuantityDelta;
+            var line = new TableRow();
+            line.Cells.Add(Cell(row.DateUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")));
+            line.Cells.Add(Cell(row.SourceType));
+            line.Cells.Add(Cell(row.QuantityDelta.ToString("N3")));
+            line.Cells.Add(Cell(row.InventoryValueDelta.ToString("N2")));
+            line.Cells.Add(Cell(row.UnitCost.ToString("N2")));
+            line.Cells.Add(Cell(running.ToString("N3")));
+            group.Rows.Add(line);
+        }
+        doc.Blocks.Add(table);
+        doc.Blocks.Add(new Paragraph(new Bold(new Run(
+            $"الرصيد النهائي: {running:N3}   |   صافي قيمة الحركات: {values.Sum(x => x.InventoryValueDelta):N2} {brand.CurrencySymbol}")))
+        { Margin = new Thickness(0, 14, 0, 0) });
+        return doc;
+    }
+
     private static FlowDocument CreateDocument(bool thermal)
     {
         var doc = new FlowDocument
@@ -440,15 +485,145 @@ public static class InvoicePrintService
     }
     private static ImageSource ToImage(byte[] bytes){var b=new BitmapImage();using var ms=new MemoryStream(bytes);b.BeginInit();b.CacheOption=BitmapCacheOption.OnLoad;b.StreamSource=ms;b.EndInit();b.Freeze();return b;}
 
-    public static void Preview(FlowDocument document,string title)
+    public static void Preview(FlowDocument document, string title) =>
+        new PrintPreviewWindow(_ => document, title, document.PageWidth < 500, canToggleSize: false)
+        {
+            Owner = System.Windows.Application.Current?.MainWindow
+        }.ShowDialog();
+
+    public static void Preview(Func<bool, FlowDocument> documentFactory, string title, bool initialThermal) =>
+        new PrintPreviewWindow(documentFactory, title, initialThermal, canToggleSize: true)
+        {
+            Owner = System.Windows.Application.Current?.MainWindow
+        }.ShowDialog();
+}
+
+
+public sealed class PrintPreviewWindow : Window
+{
+    private readonly Func<bool, FlowDocument> _documentFactory;
+    private readonly DocumentViewer _viewer;
+    private readonly Button _toggleButton;
+    private readonly bool _canToggleSize;
+    private bool _thermal;
+
+    public PrintPreviewWindow(
+        Func<bool, FlowDocument> documentFactory,
+        string title,
+        bool initialThermal,
+        bool canToggleSize)
     {
-        var copy=((IDocumentPaginatorSource)document).DocumentPaginator;
-        var viewer=new DocumentViewer{Document=document};
-        var print=new Button{Content="طباعة مباشرة",Margin=new Thickness(4),Padding=new Thickness(16,8,16,8)};
-        print.Click+=(_,_)=>{var d=new PrintDialog();if(d.ShowDialog()==true)d.PrintDocument(copy,"Qodynex invoice");};
-        var save=new Button{Content="حفظ XPS قابل للطباعة",Margin=new Thickness(4),Padding=new Thickness(16,8,16,8)};
-        save.Click+=(_,_)=>{var d=new SaveFileDialog{Filter="XPS Document|*.xps",FileName="Qodynex-Invoice.xps"};if(d.ShowDialog()!=true)return;using var xps=new XpsDocument(d.FileName,FileAccess.ReadWrite);XpsDocument.CreateXpsDocumentWriter(xps).Write(copy);};
-        var panel=new DockPanel();var bar=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Left};bar.Children.Add(print);bar.Children.Add(save);DockPanel.SetDock(bar,Dock.Top);panel.Children.Add(bar);panel.Children.Add(viewer);
-        new Window{Title=title,Width=1000,Height=800,WindowStartupLocation=WindowStartupLocation.CenterOwner,Content=panel,Owner=System.Windows.Application.Current.MainWindow}.ShowDialog();
+        _documentFactory = documentFactory;
+        _thermal = initialThermal;
+        _canToggleSize = canToggleSize;
+
+        Title = title;
+        Width = 1080;
+        Height = 820;
+        MinWidth = 760;
+        MinHeight = 600;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        FlowDirection = FlowDirection.RightToLeft;
+        Background = Brushes.White;
+
+        _viewer = new DocumentViewer { Margin = new Thickness(0) };
+
+        var print = ActionButton("طباعة الآن / PDF", (_, _) => PrintCurrent());
+        var save = ActionButton("حفظ XPS", (_, _) => SaveCurrentXps());
+        _toggleButton = ActionButton(string.Empty, (_, _) => ToggleSize());
+        _toggleButton.Visibility = _canToggleSize ? Visibility.Visible : Visibility.Collapsed;
+        var close = ActionButton("إغلاق", (_, _) => Close());
+
+        var bar = new DockPanel
+        {
+            LastChildFill = false,
+            Background = new SolidColorBrush(Color.FromRgb(241, 245, 249)),
+            Margin = new Thickness(0),
+            Height = 58
+        };
+        var titleText = new TextBlock
+        {
+            Text = title,
+            FontSize = 16,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = new SolidColorBrush(Color.FromRgb(15, 23, 42)),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(16, 0, 12, 0)
+        };
+        DockPanel.SetDock(titleText, Dock.Right);
+        bar.Children.Add(titleText);
+
+        var actions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 8, 0)
+        };
+        actions.Children.Add(print);
+        actions.Children.Add(save);
+        actions.Children.Add(_toggleButton);
+        actions.Children.Add(close);
+        DockPanel.SetDock(actions, Dock.Left);
+        bar.Children.Add(actions);
+
+        var panel = new DockPanel();
+        DockPanel.SetDock(bar, Dock.Top);
+        panel.Children.Add(bar);
+        panel.Children.Add(_viewer);
+        Content = panel;
+
+        LoadDocument();
+    }
+
+    private static Button ActionButton(string text, RoutedEventHandler handler)
+    {
+        var button = new Button
+        {
+            Content = text,
+            Margin = new Thickness(4),
+            Padding = new Thickness(14, 7, 14, 7),
+            MinWidth = 100,
+            MinHeight = 36
+        };
+        button.Click += handler;
+        return button;
+    }
+
+    private void ToggleSize()
+    {
+        if (!_canToggleSize) return;
+        _thermal = !_thermal;
+        LoadDocument();
+    }
+
+    private void LoadDocument()
+    {
+        var document = _documentFactory(_thermal);
+        _viewer.Document = document;
+        _toggleButton.Content = _thermal ? "تبديل إلى A4" : "تبديل إلى 80mm";
+        Title = $"{(_thermal ? "80mm" : "A4")} — {Title.Split('—')[^1].Trim()}";
+    }
+
+    private void PrintCurrent()
+    {
+        if (_viewer.Document is not IDocumentPaginatorSource source) return;
+        var dialog = new PrintDialog();
+        if (dialog.ShowDialog() == true)
+            dialog.PrintDocument(source.DocumentPaginator, "Qodynex");
+    }
+
+    private void SaveCurrentXps()
+    {
+        if (_viewer.Document is not IDocumentPaginatorSource source) return;
+        var dialog = new SaveFileDialog
+        {
+            Filter = "XPS Document|*.xps",
+            FileName = $"Qodynex-{DateTime.Now:yyyyMMdd-HHmm}.xps"
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        using var xps = new XpsDocument(dialog.FileName, FileAccess.ReadWrite);
+        XpsDocument.CreateXpsDocumentWriter(xps).Write(source.DocumentPaginator);
     }
 }

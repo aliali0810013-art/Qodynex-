@@ -385,8 +385,8 @@ public sealed class VouchersWorkspaceViewModel : ObservableObject, IWorkspaceAct
         {
             if(Selected is null)throw new InvalidOperationException("حدد سنداً أولاً.");
             var brand=await _facade.GetBrandingAsync().ConfigureAwait(true);
-            var doc=ReportPrintService.BuildVoucher(Selected,brand,thermal);
-            InvoicePrintService.Preview(doc,$"{Selected.Kind} — {(thermal?"80mm":"A4")}");
+            InvoicePrintService.Preview(size => ReportPrintService.BuildVoucher(Selected, brand, size),
+                $"{Selected.Kind} — معاينة", thermal);
             Status="تم فتح معاينة السند.";
         }
         catch(Exception ex){Status=ex.Message;}

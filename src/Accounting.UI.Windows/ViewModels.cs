@@ -380,8 +380,8 @@ public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspac
         try
         {
             var branding = await _facade.GetBrandingAsync().ConfigureAwait(true);
-            InvoicePrintService.Preview(InvoicePrintService.Build(this, branding, thermal),
-                thermal ? "معاينة فاتورة 80mm" : "معاينة فاتورة A4");
+            InvoicePrintService.Preview(size => InvoicePrintService.Build(this, branding, size),
+                "معاينة الفاتورة", thermal);
         }
         catch (Exception ex) { Status = ex.Message; }
     }
@@ -469,8 +469,8 @@ public sealed partial class VoucherEditorViewModel : ObservableObject, IWorkspac
         try
         {
             var branding=await _facade.GetBrandingAsync().ConfigureAwait(true);
-            InvoicePrintService.Preview(InvoicePrintService.BuildVoucher(this,branding,thermal),
-                thermal?"معاينة سند 80mm":"معاينة سند A4");
+            InvoicePrintService.Preview(size => InvoicePrintService.BuildVoucher(this, branding, size),
+                "معاينة السند", thermal);
         }
         catch(Exception ex){Status=ex.Message;}
     }
@@ -573,25 +573,57 @@ public sealed class ItemMovementViewModel : ObservableObject, IWorkspaceActionTa
     private readonly Guid _itemId;
     private readonly Guid _warehouseId;
     private string _summary = string.Empty;
+    private string _status = "جاهز";
+
     public string ItemName { get; }
     public string Summary { get => _summary; private set => Set(ref _summary, value); }
+    public string Status { get => _status; private set => Set(ref _status, value); }
     public ObservableCollection<ItemMovementRow> Rows { get; } = new();
+    public AsyncRelayCommand PrintA4Command { get; }
 
     public ItemMovementViewModel(WindowsAccountingFacade facade, Guid itemId, Guid warehouseId, string itemName)
     {
-        _facade = facade; _itemId = itemId; _warehouseId = warehouseId; ItemName = itemName;
+        _facade = facade;
+        _itemId = itemId;
+        _warehouseId = warehouseId;
+        ItemName = itemName;
+        PrintA4Command = new AsyncRelayCommand(PrintA4Async);
     }
 
     public async Task RefreshAsync()
     {
-        var position = await _facade.GetStockPositionAsync(_itemId, _warehouseId).ConfigureAwait(true);
-        var rows = await _facade.GetItemMovementAsync(_itemId, _warehouseId).ConfigureAwait(true);
-        Rows.Clear(); foreach (var row in rows) Rows.Add(row);
-        Summary = $"الكمية: {position.QuantityOnHand} | القيمة: {position.InventoryValue} | المتوسط: {position.AverageUnitCost}";
+        try
+        {
+            var positionTask = _facade.GetStockPositionAsync(_itemId, _warehouseId);
+            var rowsTask = _facade.GetItemMovementAsync(_itemId, _warehouseId);
+            await Task.WhenAll(positionTask, rowsTask).ConfigureAwait(true);
+
+            Rows.Clear();
+            foreach (var row in rowsTask.Result) Rows.Add(row);
+            var position = positionTask.Result;
+            Summary = $"الكمية: {position.QuantityOnHand:N3} | القيمة: {position.InventoryValue:N2} | المتوسط: {position.AverageUnitCost:N2}";
+            Status = $"عدد الحركات: {Rows.Count}";
+        }
+        catch (Exception ex) { Status = ex.Message; }
     }
+
+    private async Task PrintA4Async()
+    {
+        try
+        {
+            if (Rows.Count == 0) await RefreshAsync().ConfigureAwait(true);
+            var brand = await _facade.GetBrandingAsync().ConfigureAwait(true);
+            InvoicePrintService.Preview(
+                ReportPrintService.BuildStockCard(ItemName, Rows, brand),
+                $"كرت الصنف — {ItemName}");
+            Status = "تم فتح معاينة كرت الصنف A4.";
+        }
+        catch (Exception ex) { Status = ex.Message; }
+    }
+
     public Task SaveAndPostAsync() => RefreshAsync();
     public Task QuickSearchAsync() => RefreshAsync();
-    public Task OpenSelectedDetailsAsync() => RefreshAsync();
+    public Task OpenSelectedDetailsAsync() => PrintA4Async();
 }
 
 public sealed partial class LedgerViewModel : ObservableObject, IWorkspaceActionTarget

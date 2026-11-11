@@ -563,8 +563,23 @@
     </DataTemplate>
 
     <DataTemplate DataType="{x:Type vm:ItemMovementViewModel}">
-      <Grid Margin="14"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions><TextBlock Text="{Binding Summary}" FontSize="19" FontWeight="Bold" Foreground="{StaticResource GoldBrush}" Margin="6"/>
-        <DataGrid Grid.Row="1" ItemsSource="{Binding Rows}"><DataGrid.Columns><DataGridTextColumn Header="التاريخ" Binding="{Binding DateUtc, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="170"/><DataGridTextColumn Header="المصدر" Binding="{Binding SourceType}" Width="180"/><DataGridTextColumn Header="الكمية" Binding="{Binding QuantityDelta, StringFormat={}{0:N3}}" Width="130"/><DataGridTextColumn Header="القيمة" Binding="{Binding InventoryValueDelta, StringFormat={}{0:N2}}" Width="150"/><DataGridTextColumn Header="تكلفة الوحدة" Binding="{Binding UnitCost, StringFormat={}{0:N2}}" Width="150"/></DataGrid.Columns></DataGrid>
+      <Grid Margin="14">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid>
+          <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <TextBlock Text="{Binding Summary}" FontSize="19" FontWeight="Bold" Foreground="{StaticResource GoldBrush}" Margin="6" VerticalAlignment="Center"/>
+          <Button Grid.Column="1" Style="{StaticResource PrimaryButton}" Content="طباعة كرت الصنف A4" Command="{Binding PrintA4Command}"/>
+        </Grid>
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Rows}" IsReadOnly="True">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="التاريخ" Binding="{Binding DateUtc, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="170"/>
+            <DataGridTextColumn Header="المصدر" Binding="{Binding SourceType}" Width="180"/>
+            <DataGridTextColumn Header="الكمية" Binding="{Binding QuantityDelta, StringFormat={}{0:N3}}" Width="130"/>
+            <DataGridTextColumn Header="القيمة" Binding="{Binding InventoryValueDelta, StringFormat={}{0:N2}}" Width="150"/>
+            <DataGridTextColumn Header="تكلفة الوحدة" Binding="{Binding UnitCost, StringFormat={}{0:N2}}" Width="150"/>
+          </DataGrid.Columns>
+        </DataGrid>
+        <TextBlock Grid.Row="2" Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" Margin="6"/>
       </Grid>
     </DataTemplate>
   </Window.Resources>
