@@ -17,7 +17,7 @@ public sealed record MobileStatementRow(DateTimeOffset DateUtc, string Reference
 public sealed record MobileInventoryResult(MobileItem Item, StockPosition? Position, IReadOnlyList<ItemMovement> Movements);
 public sealed record ItemMovement(DateTimeOffset DateUtc, string Source, decimal QuantityDelta, decimal InventoryValueDelta, decimal UnitCost);
 
-public sealed class MobileAccountingFacade
+public sealed partial class MobileAccountingFacade
 {
     private readonly LocalAccountingDbContext _db;
     private readonly AccountingPostingEngine _posting;
