@@ -251,7 +251,7 @@ public sealed partial class MobileAccountingFacade
         if(row is null){row=new LocalCompanyBrandingSettings{Id=UuidV7.NewGuid(),CompanyId=_user.CompanyId,BranchId=_user.BranchId};_db.LocalCompanyBrandingSettings.Add(row);}
         row.ArabicName=value.ArabicName;row.EnglishName=value.EnglishName;row.City=value.City;row.Address=value.Address;row.Phones=value.Phones;row.Email=value.Email;
         row.TaxNumber=value.TaxNumber;row.CommercialRegistration=value.CommercialRegistration;row.FooterNotes=value.FooterNotes;row.CurrencyCode=value.CurrencyCode;row.CurrencySymbol=value.CurrencySymbol;
-        row.TaxEnabled=value.TaxEnabled;row.TaxRate=value.TaxRate;row.AllowNegativeStock=value.AllowNegativeStock;row.DarkThemeEnabled=value.DarkThemeEnabled;row.LogoBytes=value.LogoBytes;row.UpdatedAtUtcTicks=DateTimeOffset.UtcNow.UtcTicks;
+        row.TaxEnabled=value.TaxEnabled;row.TaxRate=value.TaxRate;row.AllowNegativeStock=value.AllowNegativeStock;row.DarkThemeEnabled=value.DarkThemeEnabled;row.LogoBytes=value.LogoBytes;row.UpdatedAtUtcTicks=DateTimeOffset.UtcNow.UtcDateTime.Ticks;
         var output=company.OutputTaxAccountId;var input=company.InputTaxAccountId;
         if(value.TaxEnabled&&value.TaxRate>0m&&output is null)
         {
