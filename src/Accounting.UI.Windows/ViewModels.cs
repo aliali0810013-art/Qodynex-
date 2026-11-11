@@ -409,11 +409,17 @@ public sealed partial class VoucherEditorViewModel : ObservableObject, IWorkspac
     private readonly Action<string, string, object> _openTab;
     private readonly bool _receipt;
     private string _status = string.Empty;
+    private bool _voucherPosted;
+    private string _voucherDocumentNumber = "مسودة";
+    private DateTimeOffset _voucherDocumentDate = DateTimeOffset.Now;
 
     public VoucherEditorViewModel(WindowsAccountingFacade facade, Action<string, string, object> openTab, bool receipt)
     {
         _facade = facade; _openTab = openTab; _receipt = receipt;
         SaveCommand = new AsyncRelayCommand(SaveAndPostAsync);
+        PrintThermalCommand = new AsyncRelayCommand(() => PrintVoucherAsync(true));
+        PrintA4Command = new AsyncRelayCommand(() => PrintVoucherAsync(false));
+        NewVoucherCommand = new RelayCommand(NewVoucher);
         _ = InitializeProductionVoucherAsync();
     }
 
@@ -424,10 +430,18 @@ public sealed partial class VoucherEditorViewModel : ObservableObject, IWorkspac
     public decimal Amount { get; set; }
     public string Description { get; set; } = string.Empty;
     public string Status { get => _status; private set => Set(ref _status, value); }
+    public bool VoucherPosted { get=>_voucherPosted; private set { if(Set(ref _voucherPosted,value)) Raise(nameof(VoucherEditable)); } }
+    public bool VoucherEditable => !VoucherPosted;
+    public string VoucherDocumentNumber { get=>_voucherDocumentNumber; private set=>Set(ref _voucherDocumentNumber,value); }
+    public DateTimeOffset VoucherDocumentDate { get=>_voucherDocumentDate; private set=>Set(ref _voucherDocumentDate,value); }
     public AsyncRelayCommand SaveCommand { get; }
+    public AsyncRelayCommand PrintThermalCommand { get; }
+    public AsyncRelayCommand PrintA4Command { get; }
+    public RelayCommand NewVoucherCommand { get; }
 
     public async Task SaveAndPostAsync()
     {
+        if(VoucherPosted){Status="هذا السند مرحّل. اضغط «سند جديد» لبدء مستند آخر.";return;}
         var cash = SelectedCashAccount?.Id
             ?? (Guid.TryParse(CashAccountIdText, out var parsedCash) ? parsedCash : Guid.Empty);
         var counter = SelectedCounterAccount?.Id
@@ -442,10 +456,27 @@ public sealed partial class VoucherEditorViewModel : ObservableObject, IWorkspac
         try
         {
             var result = await _facade.PostVoucherAsync(_receipt, cash, counter, partner, Amount, Description).ConfigureAwait(true);
-            Status = $"تم الترحيل محلياً: {result.OperationId:N}";
-            Amount = 0m; Description = string.Empty; Raise(nameof(Amount)); Raise(nameof(Description));
+            var info=await _facade.GetVoucherPrintInfoAsync(_receipt,result.DocumentId).ConfigureAwait(true);
+            VoucherDocumentNumber=info.OfficialNumber=="-"?info.LocalNumber:info.OfficialNumber;VoucherDocumentDate=info.DateUtc;VoucherPosted=true;
+            Status = $"تم ترحيل السند محلياً: {VoucherDocumentNumber}. يمكن معاينته وطباعته الآن.";
         }
         catch (Exception ex) { Status = ex.Message; }
+    }
+
+    private async Task PrintVoucherAsync(bool thermal)
+    {
+        try
+        {
+            var branding=await _facade.GetBrandingAsync().ConfigureAwait(true);
+            InvoicePrintService.Preview(InvoicePrintService.BuildVoucher(this,branding,thermal),
+                thermal?"معاينة سند 80mm":"معاينة سند A4");
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+    private void NewVoucher()
+    {
+        Amount=0m;Description=string.Empty;SelectedVoucherPartner=null;VoucherDocumentNumber="مسودة";VoucherDocumentDate=DateTimeOffset.Now;VoucherPosted=false;
+        Raise(nameof(Amount));Raise(nameof(Description));Status="سند جديد جاهز للإدخال.";
     }
 
     public Task QuickSearchAsync()
