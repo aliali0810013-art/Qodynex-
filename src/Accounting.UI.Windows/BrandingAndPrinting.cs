@@ -171,8 +171,8 @@ public static class InvoicePrintService
         else
         {
             var header=new Grid{Margin=new Thickness(0,0,0,12)};
-            header.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
-            header.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(170)));
+            header.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Star});
+            header.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(170)});
             header.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
             var company=new TextBlock{Text=$"{brand.ArabicName}\n{brand.BusinessDescription}",FontSize=15,FontWeight=FontWeights.Bold,TextAlignment=TextAlignment.Right,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};
             Grid.SetColumn(company,0);header.Children.Add(company);
