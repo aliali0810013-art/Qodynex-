@@ -171,9 +171,9 @@ public static class InvoicePrintService
         else
         {
             var header=new Grid{Margin=new Thickness(0,0,0,12)};
-            header.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Star});
+            header.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(1, GridUnitType.Star)});
             header.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(170)});
-            header.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            header.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(1, GridUnitType.Star)));
             var company=new TextBlock{Text=$"{brand.ArabicName}\n{brand.BusinessDescription}",FontSize=15,FontWeight=FontWeights.Bold,TextAlignment=TextAlignment.Right,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};
             Grid.SetColumn(company,0);header.Children.Add(company);
             if(brand.LogoBytes is {Length:>0}){var img=new Image{Source=ToImage(brand.LogoBytes),Height=80,Stretch=Stretch.Uniform};Grid.SetColumn(img,1);header.Children.Add(img);}
@@ -209,7 +209,7 @@ public static class InvoicePrintService
         else
         {
             var header=new Grid{Margin=new Thickness(0,0,0,14)};
-            header.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Star});header.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(170)});header.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Star});
+            header.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(1, GridUnitType.Star)});header.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(170)});header.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(1, GridUnitType.Star)});
             var company=new TextBlock{Text=$"{brand.ArabicName}\n{brand.BusinessDescription}",FontSize=15,FontWeight=FontWeights.Bold,TextAlignment=TextAlignment.Right,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};Grid.SetColumn(company,0);header.Children.Add(company);
             if(brand.LogoBytes is {Length:>0}){var img=new Image{Source=ToImage(brand.LogoBytes),Height=80,Stretch=Stretch.Uniform};Grid.SetColumn(img,1);header.Children.Add(img);}
             var info=new TextBlock{Text=$"{brand.City}\n{brand.Address}\n{brand.Phones}\n{brand.Email}\nالرقم الضريبي: {brand.TaxNumber}",FontSize=10,TextAlignment=TextAlignment.Left,TextWrapping=TextWrapping.Wrap,VerticalAlignment=VerticalAlignment.Center};Grid.SetColumn(info,2);header.Children.Add(info);
