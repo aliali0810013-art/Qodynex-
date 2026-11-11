@@ -18,7 +18,7 @@ public static class MobileTheme
     {
         var resources = new ResourceDictionary();
         resources.Add("QBackground", Background); resources.Add("QSurface", Surface);
-        resources.Add("QCard", Card); resources.Add("QBorder", Border); resources.Add("QGold", Gold);
+        resources.Add("QCard", Card); resources.Add("QBorder", BorderColor); resources.Add("QGold", Gold);
         resources.Add("QOrange", Orange); resources.Add("QGreen", Green); resources.Add("QRed", Red);
         resources.Add("QBlue", Blue); resources.Add("QText", Text); resources.Add("QMuted", Muted);
 
