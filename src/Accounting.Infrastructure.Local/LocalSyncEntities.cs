@@ -46,3 +46,31 @@ public sealed class LocalModuleConfiguration
     public string ModuleKey { get; set; } = string.Empty;
     public string ConfigurationJson { get; set; } = "{}";
 }
+
+
+public sealed class LocalCompanyBrandingSettings
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid BranchId { get; set; }
+    public string ArabicName { get; set; } = string.Empty;
+    public string EnglishName { get; set; } = string.Empty;
+    public string BusinessDescription { get; set; } = string.Empty;
+    public byte[]? LogoBytes { get; set; }
+    public string? LogoFileName { get; set; }
+    public string? LogoMimeType { get; set; }
+    public string City { get; set; } = string.Empty;
+    public string Address { get; set; } = string.Empty;
+    public string Phones { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string TaxNumber { get; set; } = string.Empty;
+    public string CommercialRegistration { get; set; } = string.Empty;
+    public string FooterNotes { get; set; } = string.Empty;
+    public string CurrencyCode { get; set; } = "YER";
+    public string CurrencySymbol { get; set; } = "YER";
+    public bool TaxEnabled { get; set; }
+    public decimal TaxRate { get; set; }
+    public bool AllowNegativeStock { get; set; }
+    public bool DarkThemeEnabled { get; set; }
+    public long UpdatedAtUtcTicks { get; set; }
+}
