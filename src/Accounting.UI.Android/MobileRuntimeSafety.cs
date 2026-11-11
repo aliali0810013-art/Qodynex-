@@ -42,7 +42,7 @@ public static class MobileRuntimeSafety
 
         await MainThread.InvokeOnMainThreadAsync(async () =>
         {
-            var page = Application.Current?.MainPage;
+            var page = Microsoft.Maui.Controls.Application.Current?.MainPage;
             if (page is not null)
                 await page.DisplayAlert("تنبيه Qodynex", exception.Message, "حسناً");
         });
