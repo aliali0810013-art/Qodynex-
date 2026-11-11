@@ -178,8 +178,18 @@ public static class InvoicePrintService
     private static TableCell Cell(string s,bool bold=false){var p=new Paragraph(new Run(s)){Margin=new Thickness(3),Padding=new Thickness(2)};if(bold)p.FontWeight=FontWeights.Bold;return new TableCell(p){BorderBrush=Brushes.Gray,BorderThickness=new Thickness(.5)};}
     private static Block BuildQrBlock(string payload,bool thermal)
     {
-        var hash=System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(payload));var g=new Grid{Width=thermal?90:110,Height=thermal?90:110,Background=Brushes.White};
-        for(int i=0;i<21;i++)for(int j=0;j<21;j++){var bit=((hash[(i*21+j)%hash.Length]>>((i+j)%8))&1)==1;if(!bit)continue;g.Children.Add(new Border{Background=Brushes.Black,Width=g.Width/21,Height=g.Height/21,HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top,Margin=new Thickness(j*g.Width/21,i*g.Height/21,0,0)});}
+        var size=thermal?116:140;
+        var matrix=new ZXing.MultiFormatWriter().encode(payload,ZXing.BarcodeFormat.QR_CODE,29,29,
+            new Dictionary<ZXing.EncodeHintType,object>{{ZXing.EncodeHintType.MARGIN,1},{ZXing.EncodeHintType.CHARACTER_SET,"UTF-8"}});
+        var g=new Grid{Width=size,Height=size,Background=Brushes.White};
+        var module=Math.Min((double)size/matrix.Width,(double)size/matrix.Height);
+        for(int y=0;y<matrix.Height;y++)for(int x=0;x<matrix.Width;x++)
+        {
+            if(!matrix[x,y])continue;
+            g.Children.Add(new Border{Background=Brushes.Black,Width=module+0.2,Height=module+0.2,
+                HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top,
+                Margin=new Thickness(x*module,y*module,0,0)});
+        }
         return new BlockUIContainer(g){TextAlignment=TextAlignment.Center};
     }
     private static ImageSource ToImage(byte[] bytes){var b=new BitmapImage();using var ms=new MemoryStream(bytes);b.BeginInit();b.CacheOption=BitmapCacheOption.OnLoad;b.StreamSource=ms;b.EndInit();b.Freeze();return b;}
