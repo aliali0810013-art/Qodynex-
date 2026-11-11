@@ -86,7 +86,7 @@ public sealed class WindowsColdStartTests
 
             // Production UI/UX facade coverage for the seven Windows workspaces.
             var dashboard = await facade.GetDashboardAsync();
-            Assert.Equal(5, dashboard.ItemCount);
+            Assert.Equal(6, dashboard.ItemCount);
             Assert.True(dashboard.PurchaseTotal >= 0m);
             Assert.True(dashboard.CustomerReceivables >= 0m);
             Assert.True(dashboard.RecentJournals.Count <= 15);
@@ -94,7 +94,7 @@ public sealed class WindowsColdStartTests
 
             var warehouses = await facade.GetWarehousesAsync();
             Assert.Single(warehouses);
-            Assert.Equal(5, (await facade.GetInventoryGridAsync(seed.WarehouseId)).Count);
+            Assert.Equal(6, (await facade.GetInventoryGridAsync(seed.WarehouseId)).Count);
             Assert.NotEmpty(await facade.GetAccountTreeAsync());
             Assert.NotEmpty(await facade.GetRecentJournalsAsync());
             Assert.Empty(await facade.GetVoucherHistoryAsync());
