@@ -144,8 +144,31 @@ public sealed class LocalDatabaseMaintenanceService
             throw new InvalidOperationException($"فشل التحقق من ملف الاستعادة المؤقت: {copied.Summary}");
         }
 
-        File.Move(temp, PendingRestorePath, overwrite: true);
+        SqliteConnection.ClearAllPools();
+        await MoveWithRetryAsync(temp, PendingRestorePath, ct).ConfigureAwait(false);
         return PendingRestorePath;
+    }
+
+    private static async Task MoveWithRetryAsync(string source, string destination, CancellationToken ct)
+    {
+        IOException? last = null;
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                File.Move(source, destination, overwrite: true);
+                return;
+            }
+            catch (IOException ex)
+            {
+                last = ex;
+                SqliteConnection.ClearAllPools();
+                await Task.Delay(50 * (attempt + 1), ct).ConfigureAwait(false);
+            }
+        }
+
+        throw last ?? new IOException("تعذر تثبيت ملف الاستعادة المؤقت.");
     }
 
     public async Task<LocalDatabaseIntegrityResult> CheckIntegrityAsync(CancellationToken ct = default)
