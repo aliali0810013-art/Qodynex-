@@ -221,7 +221,8 @@
           <Button Content="F2 جديد" Click="OnNewClick"/><Button Content="F3 بحث سريع" Click="OnQuickSearchClick"/><Button Style="{StaticResource PrimaryButton}" Content="F5 حفظ وترحيل" Click="OnSavePostClick"/><Button Content="F7 تفاصيل" Click="OnDetailsClick"/><Button Content="F9 مزامنة الآن" Click="OnSyncNowClick"/>
         </StackPanel>
         <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Left">
-          <TextBlock Text="{Binding BranchName, StringFormat=الفرع: {0}}" FontWeight="SemiBold"/>
+          <TextBlock Text="{Binding ProductionCompanyName}" FontWeight="SemiBold"/>
+          <StackPanel Orientation="Horizontal"><TextBlock Text="{Binding BranchName, StringFormat='الفرع: {0}'}" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="  •  " Foreground="{StaticResource MutedBrush}"/><TextBlock Text="{Binding ProductionCurrency, StringFormat='العملة: {0}'}" Foreground="{StaticResource GoldBrush}"/></StackPanel>
           <TextBlock Text="{Binding NetworkStatus}" Foreground="{StaticResource GreenBrush}" HorizontalAlignment="Left"/>
         </StackPanel>
       </Grid>
@@ -253,7 +254,7 @@
     </Grid>
 
     <StatusBar Grid.Row="2">
-      <StatusBarItem><TextBlock Text="{Binding UserName, StringFormat=المستخدم: {0}}"/></StatusBarItem><Separator/>
+      <StatusBarItem><TextBlock Text="{Binding UserName, StringFormat='المستخدم: {0}'}"/></StatusBarItem><Separator/>
       <StatusBarItem><TextBlock Text="SQLite: متصل"/></StatusBarItem><Separator/>
       <StatusBarItem><TextBlock Text="{Binding SyncStatus}"/></StatusBarItem>
     </StatusBar>
