@@ -165,7 +165,7 @@
     <DataTemplate DataType="{x:Type vm:VoucherEditorViewModel}">
       <ScrollViewer><StackPanel Margin="24" MaxWidth="980" HorizontalAlignment="Center">
         <TextBlock Text="{Binding Title}" FontSize="28" FontWeight="Bold" Margin="4,0,4,16"/>
-        <Border Style="{StaticResource CardBorder}"><Grid>
+        <Border Style="{StaticResource CardBorder}" IsEnabled="{Binding VoucherEditable}"><Grid>
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
           <StackPanel><TextBlock Text="الصندوق / البنك" Foreground="{StaticResource MutedBrush}"/><ComboBox ItemsSource="{Binding VoucherCashAccounts}" SelectedItem="{Binding SelectedCashAccount}" DisplayMemberPath="Name"/></StackPanel>
@@ -174,8 +174,15 @@
           <StackPanel Grid.Row="1" Grid.Column="1"><TextBlock Text="المبلغ" Foreground="{StaticResource MutedBrush}"/><TextBox Text="{Binding Amount}" FontSize="20"/></StackPanel>
           <StackPanel Grid.Row="2" Grid.ColumnSpan="2"><TextBlock Text="البيان" Foreground="{StaticResource MutedBrush}"/><TextBox Text="{Binding Description}"/></StackPanel>
         </Grid></Border>
-        <Button Style="{StaticResource PrimaryButton}" Content="حفظ وترحيل F5" Command="{Binding SaveCommand}" Height="52"/>
-        <TextBlock Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="6"/>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+          <Button Style="{StaticResource PrimaryButton}" Content="حفظ وترحيل F5" Command="{Binding SaveCommand}" IsEnabled="{Binding VoucherEditable}" MinWidth="150"/>
+          <Button Content="+ سند جديد" Command="{Binding NewVoucherCommand}" MinWidth="100"/>
+          <Button Content="طباعة مبسطة 80mm" Command="{Binding PrintThermalCommand}" MinWidth="140"/>
+          <Button Content="طباعة A4 رسمية" Command="{Binding PrintA4Command}" MinWidth="130"/>
+        </StackPanel>
+        <TextBlock Margin="6" TextWrapping="Wrap">
+          <Run Text="{Binding Status}"/><LineBreak/><Run Text="رقم السند: "/><Run Text="{Binding VoucherDocumentNumber}" FontWeight="Bold"/><Run Text="   التاريخ: "/><Run Text="{Binding VoucherDocumentDate,StringFormat={}{0:yyyy-MM-dd HH:mm}}" FontWeight="Bold"/>
+        </TextBlock>
       </StackPanel></ScrollViewer>
     </DataTemplate>
 
