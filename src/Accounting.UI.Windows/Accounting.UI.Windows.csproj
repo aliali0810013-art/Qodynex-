@@ -14,6 +14,9 @@
     <UseAppHost>true</UseAppHost>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="ZXing.Net" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Accounting.Application/Accounting.Application.csproj" />
     <ProjectReference Include="../Accounting.Domain/Accounting.Domain.csproj" />
     <ProjectReference Include="../Accounting.Infrastructure.Local/Accounting.Infrastructure.Local.csproj" />
