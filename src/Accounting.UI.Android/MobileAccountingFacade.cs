@@ -16,6 +16,7 @@ public sealed record MobileSaleLine(Guid ItemId, Guid UnitOfMeasureId, decimal Q
 public sealed record MobileStatementRow(DateTimeOffset DateUtc, string Reference, string Description, decimal Debit, decimal Credit, decimal RunningBalance);
 public sealed record MobileInventoryResult(MobileItem Item, StockPosition? Position, IReadOnlyList<ItemMovement> Movements);
 public sealed record ItemMovement(DateTimeOffset DateUtc, string Source, decimal QuantityDelta, decimal InventoryValueDelta, decimal UnitCost);
+public sealed record MobileStockCard(Guid ItemId, string Sku, string Name, string UnitName, decimal QuantityOnHand, decimal AverageUnitCost, decimal InventoryValue);
 
 public sealed partial class MobileAccountingFacade
 {
@@ -201,4 +202,24 @@ public sealed partial class MobileAccountingFacade
             .ToListAsync(ct).ConfigureAwait(false);
         return new MobileInventoryResult(item, position, movements);
     }
+    public async Task<IReadOnlyList<MobileStockCard>> GetStockCardsAsync(Guid warehouseId, CancellationToken ct = default)
+    {
+        var items = await (from item in _db.Items.AsNoTracking()
+                           join unit in _db.UnitOfMeasures.AsNoTracking() on item.BaseUnitOfMeasureId equals unit.Id
+                           where item.CompanyId == _user.CompanyId && item.BranchId == _user.BranchId
+                              && item.IsActive && item.ItemKind == ItemKind.Stock
+                           orderby item.Name
+                           select new { item.Id, item.Sku, item.Name, UnitName = unit.Name })
+            .ToListAsync(ct).ConfigureAwait(false);
+
+        var result = new List<MobileStockCard>(items.Count);
+        foreach (var item in items)
+        {
+            var position = await _queries.GetStockPositionAsync(_user, item.Id, warehouseId, ct).ConfigureAwait(false);
+            result.Add(new MobileStockCard(item.Id, item.Sku, item.Name, item.UnitName,
+                position.QuantityOnHand, position.AverageUnitCost, position.InventoryValue));
+        }
+        return result;
+    }
+
 }
