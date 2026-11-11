@@ -140,11 +140,7 @@ jobs:
             adb shell dumpsys activity top | grep -q 'tech.qodynex.accounting'
             adb exec-out screencap -p > /tmp/qodynex-screen.png
             test -s /tmp/qodynex-screen.png
-            if adb logcat -d -b crash | grep -q 'FATAL EXCEPTION'; then
-              echo "Qodynex Android emitted a fatal crash during cold start."
-              adb logcat -d -b crash
-              exit 1
-            fi
+            if adb logcat -d -b crash | grep -q 'FATAL EXCEPTION'; then echo "Qodynex Android emitted a fatal crash during cold start."; adb logcat -d -b crash; exit 1; fi
             echo "Qodynex Android cold-start kept the app process alive, foregrounded its activity, rendered a screen, and emitted no fatal crash."
       - name: Upload clean Android APK
         uses: actions/upload-artifact@v4
