@@ -21,6 +21,7 @@ public sealed record OutboxUiRow(Guid Id, string EventType, string Status, int R
 public sealed record ConflictUiRow(Guid Id, string Code, string Message, DateTimeOffset ServerTimestampUtc, bool IsResolved);
 public sealed record SyncCenterSnapshot(IReadOnlyList<OutboxUiRow> Outbox, IReadOnlyList<ConflictUiRow> Conflicts, DateTimeOffset? LastSync, string? LastError);
 public sealed record ManualJournalLine(Guid AccountId, decimal Debit, decimal Credit, string Memo);
+public sealed record UnitLookup(Guid Id, string Code, string Name);
 
 public sealed partial class WindowsAccountingFacade
 {
@@ -253,5 +254,35 @@ public sealed partial class WindowsAccountingFacade
             _db.ChangeTracker.Clear();
             throw;
         }
+    }
+    public Task<List<UnitLookup>> GetUnitsAsync(CancellationToken ct = default) =>
+        _db.UnitOfMeasures.AsNoTracking()
+            .Where(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId)
+            .OrderBy(x => x.Code)
+            .Select(x => new UnitLookup(x.Id, x.Code, x.Name))
+            .ToListAsync(ct);
+
+    public async Task<Guid> CreateLocalItemAsync(string sku, string name, string? barcode, Guid baseUnitId,
+        Guid inventoryAccountId, Guid salesAccountId, Guid cogsAccountId, Guid? cartonUnitId, decimal cartonFactor,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(sku) || string.IsNullOrWhiteSpace(name))
+            throw new InvalidOperationException("كود الصنف والاسم مطلوبان.");
+        if (await _db.Items.AnyAsync(x => x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId && x.Sku == sku.Trim(), ct).ConfigureAwait(false))
+            throw new InvalidOperationException("كود الصنف مستخدم مسبقاً.");
+        var item = new Item(_user.CompanyId, _user.BranchId, sku.Trim(), name.Trim(), baseUnitId,
+            inventoryAccountId, salesAccountId, cogsAccountId, ItemKind.Stock, barcode);
+        _db.Items.Add(item);
+        if (cartonUnitId.HasValue && cartonUnitId.Value != baseUnitId && cartonFactor > 1m)
+            _db.ItemUnitConversions.Add(new ItemUnitConversion(_user.CompanyId, _user.BranchId, item.Id, cartonUnitId.Value, cartonFactor));
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        return item.Id;
+    }
+
+    public async Task ResolveConflictLocallyAsync(Guid conflictId, CancellationToken ct = default)
+    {
+        var row = await _db.LocalSyncConflicts.SingleAsync(x => x.Id == conflictId && x.CompanyId == _user.CompanyId && x.BranchId == _user.BranchId, ct).ConfigureAwait(false);
+        row.IsResolved = true;
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 }
