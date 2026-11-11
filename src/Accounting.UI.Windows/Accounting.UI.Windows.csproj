@@ -20,8 +20,4 @@
     <ProjectReference Include="../Accounting.Modules/Accounting.Modules.csproj" />
     <ProjectReference Include="../Accounting.Sync.Client/Accounting.Sync.Client.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <Reference Include="ReachFramework" />
-    <Reference Include="System.Printing" />
-  </ItemGroup>
 </Project>
