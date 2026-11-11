@@ -13,13 +13,7 @@ namespace Accounting.UI.Android;
 
 internal static class MobileUi
 {
-    public static Button PrimaryButton(string text) => new()
-    {
-        Text = text,
-        HeightRequest = 52,
-        CornerRadius = 12,
-        FontAttributes = FontAttributes.Bold
-    };
+    public static Button PrimaryButton(string text) => MobileTheme.Primary(text);
 
     public static Entry Entry(string placeholder, Keyboard? keyboard = null, bool password = false) => new()
     {
@@ -397,7 +391,7 @@ public sealed class SalePage : ContentPage
                 price.SetBinding(Entry.TextProperty, nameof(MobileSaleLineViewModel.UnitPrice), BindingMode.TwoWay);
                 var discount = new Entry { Keyboard = Keyboard.Numeric, HorizontalTextAlignment = TextAlignment.Center, Placeholder = "خصم" };
                 discount.SetBinding(Entry.TextProperty, nameof(MobileSaleLineViewModel.Discount), BindingMode.TwoWay);
-                var remove = new Button { Text = "×", Padding = 0 };
+                var remove = MobileTheme.Secondary("×", "×"); remove.Padding = 0;
                 remove.SetBinding(Button.CommandParameterProperty, ".");
                 remove.Clicked += (_, _) =>
                 {

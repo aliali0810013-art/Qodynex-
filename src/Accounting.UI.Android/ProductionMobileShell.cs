@@ -28,6 +28,7 @@ public sealed class ProductionMobileShell : TabbedPage
         var nav = new NavigationPage(page)
         {
             Title = title,
+            IconImageSource = MobileTheme.Icon(MobileTheme.GlyphFor(title), MobileTheme.Text, 20),
             BarBackgroundColor = MobileTheme.Surface,
             BarTextColor = MobileTheme.Text
         };
@@ -54,7 +55,7 @@ public sealed class StatementSyncPage : ContentPage
         statementButton.Clicked += async (_, _) => await LoadStatementAsync();
         var syncButton = MobileTheme.Primary("مزامنة الآن");
         syncButton.Clicked += async (_, _) => await SyncNowAsync();
-        var conflictsButton = new Button { Text = "عرض تعارضات المزامنة" };
+        var conflictsButton = MobileTheme.Secondary("عرض تعارضات المزامنة");
         conflictsButton.Clicked += async (_, _) => await Navigation.PushAsync(new ConflictsPage(_runtime));
 
         var list = new CollectionView
@@ -156,7 +157,7 @@ public sealed class ProductionStockPage : ContentPage
 
         var refresh = MobileTheme.Primary("تحديث المخزون");
         refresh.Clicked += async (_, _) => await LoadAsync();
-        var lookup = new Button { Text = "باركود / استعلام صنف" };
+        var lookup = MobileTheme.Secondary("باركود / استعلام صنف");
         lookup.Clicked += async (_, _) => await Navigation.PushAsync(new InventoryPage(_runtime));
 
         var list = new CollectionView

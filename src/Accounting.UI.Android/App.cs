@@ -41,13 +41,13 @@ public sealed class App : Microsoft.Maui.Controls.Application
     {
         var error = args.ExceptionObject as Exception
                     ?? new Exception(args.ExceptionObject?.ToString() ?? "Unknown fatal error.");
-        MainThread.BeginInvokeOnMainThread(() => MainPage = new NavigationPage(ErrorPage(error)));
+        _ = MobileRuntimeSafety.ReportAsync(error, "AppDomain.UnhandledException", notify: false);
     }
 
     private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs args)
     {
         args.SetObserved();
-        MainThread.BeginInvokeOnMainThread(() => MainPage = new NavigationPage(ErrorPage(args.Exception)));
+        _ = MobileRuntimeSafety.ReportAsync(args.Exception, "TaskScheduler.UnobservedTaskException", notify: false);
     }
 
     private ContentPage ErrorPage(Exception error)

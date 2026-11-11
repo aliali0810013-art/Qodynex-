@@ -62,7 +62,7 @@ public static class MobileTheme
         {
             Setters =
             {
-                new Setter { Property = Entry.BackgroundColorProperty, Value = Color.FromArgb("#FFFFFF") },
+                new Setter { Property = Entry.BackgroundColorProperty, Value = Surface },
                 new Setter { Property = Entry.TextColorProperty, Value = Text },
                 new Setter { Property = Entry.PlaceholderColorProperty, Value = Muted }
             }
@@ -71,7 +71,7 @@ public static class MobileTheme
         {
             Setters =
             {
-                new Setter { Property = Picker.BackgroundColorProperty, Value = Color.FromArgb("#111827") },
+                new Setter { Property = Picker.BackgroundColorProperty, Value = Surface },
                 new Setter { Property = Picker.TextColorProperty, Value = Text },
                 new Setter { Property = Picker.TitleColorProperty, Value = Muted }
             }
@@ -89,11 +89,51 @@ public static class MobileTheme
         return resources;
     }
 
-    public static Button Primary(string text) => new()
+    public static Button Primary(string text, string? glyph = null) => new()
     {
-        Text = text, BackgroundColor = Blue, TextColor = Colors.White,
-        HeightRequest = 52, CornerRadius = 14, FontAttributes = FontAttributes.Bold
+        Text = text,
+        BackgroundColor = Blue,
+        TextColor = Colors.White,
+        HeightRequest = 52,
+        CornerRadius = 14,
+        FontAttributes = FontAttributes.Bold,
+        ImageSource = Icon(glyph ?? GlyphFor(text), Colors.White)
     };
+
+    public static Button Secondary(string text, string? glyph = null) => new()
+    {
+        Text = text,
+        BackgroundColor = Card,
+        TextColor = Text,
+        BorderColor = BorderColor,
+        BorderWidth = 1,
+        HeightRequest = 48,
+        CornerRadius = 12,
+        FontAttributes = FontAttributes.Bold,
+        ImageSource = Icon(glyph ?? GlyphFor(text), Text)
+    };
+
+    public static FontImageSource Icon(string glyph, Color color, double size = 18) => new()
+    {
+        Glyph = glyph,
+        FontFamily = "sans-serif",
+        Color = color,
+        Size = size
+    };
+
+    public static string GlyphFor(string text)
+    {
+        if (text.Contains("حذف", StringComparison.Ordinal) || text == "×") return "×";
+        if (text.Contains("حفظ", StringComparison.Ordinal) || text.Contains("ترحيل", StringComparison.Ordinal)) return "✓";
+        if (text.Contains("مزامنة", StringComparison.Ordinal) || text.Contains("تحديث", StringComparison.Ordinal)) return "↻";
+        if (text.Contains("باركود", StringComparison.Ordinal) || text.Contains("كاميرا", StringComparison.Ordinal) || text.Contains("مسح", StringComparison.Ordinal)) return "▦";
+        if (text.Contains("كشف", StringComparison.Ordinal) || text.Contains("استعلام", StringComparison.Ordinal)) return "⌕";
+        if (text.Contains("تحصيل", StringComparison.Ordinal) || text.Contains("قبض", StringComparison.Ordinal)) return "＋";
+        if (text.Contains("إعداد", StringComparison.Ordinal) || text.Contains("شعار", StringComparison.Ordinal)) return "⚙";
+        if (text.Contains("تعارض", StringComparison.Ordinal)) return "!";
+        if (text.Contains("مخزون", StringComparison.Ordinal) || text.Contains("جرد", StringComparison.Ordinal)) return "□";
+        return "›";
+    }
 
     public static Border CardView(View content) => new()
     {
