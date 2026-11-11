@@ -5,7 +5,7 @@ public static class MobileTheme
     public static readonly Color Background = Color.FromArgb("#0B1120");
     public static readonly Color Surface = Color.FromArgb("#0F172A");
     public static readonly Color Card = Color.FromArgb("#1E293B");
-    public static readonly Color Border = Color.FromArgb("#334155");
+    public static readonly Color BorderColor = Color.FromArgb("#334155");
     public static readonly Color Gold = Color.FromArgb("#D4AF37");
     public static readonly Color Orange = Color.FromArgb("#EA580C");
     public static readonly Color Green = Color.FromArgb("#10B981");
@@ -36,7 +36,7 @@ public static class MobileTheme
             {
                 new Setter { Property = Button.BackgroundColorProperty, Value = Card },
                 new Setter { Property = Button.TextColorProperty, Value = Text },
-                new Setter { Property = Button.BorderColorProperty, Value = Border },
+                new Setter { Property = Button.BorderColorProperty, Value = BorderColor },
                 new Setter { Property = Button.BorderWidthProperty, Value = 1d },
                 new Setter { Property = Button.CornerRadiusProperty, Value = 12 },
                 new Setter { Property = Button.PaddingProperty, Value = new Thickness(14,10) },
@@ -66,7 +66,7 @@ public static class MobileTheme
             Setters =
             {
                 new Setter { Property = Border.BackgroundColorProperty, Value = Card },
-                new Setter { Property = Border.StrokeProperty, Value = Border },
+                new Setter { Property = Border.StrokeProperty, Value = BorderColor },
                 new Setter { Property = Border.StrokeThicknessProperty, Value = 1d },
                 new Setter { Property = Border.PaddingProperty, Value = new Thickness(14) }
             }
@@ -82,7 +82,7 @@ public static class MobileTheme
 
     public static Border CardView(View content) => new()
     {
-        BackgroundColor = Card, Stroke = Border, StrokeThickness = 1, Padding = 14,
+        BackgroundColor = Card, Stroke = BorderColor, StrokeThickness = 1, Padding = 14,
         StrokeShape = new Microsoft.Maui.Controls.Shapes.RoundRectangle { CornerRadius = 16 },
         Content = content
     };
