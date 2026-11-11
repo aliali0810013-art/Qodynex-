@@ -35,6 +35,14 @@ public sealed class Company : TenantEntity
     public CompanyPolicy GetPolicy() => new(BaseCurrencyCode, CurrencyScale, RoundingMode, InventoryValuationMethod,
         AllowNegativeStock, new TaxPolicy(TaxEnabled, TaxRate, PricesIncludeTax, OutputTaxAccountId, InputTaxAccountId), QuantityScale);
 
+    public void UpdateSettings(string name, CompanyPolicy policy)
+    {
+        Name = string.IsNullOrWhiteSpace(name)
+            ? throw new AccountingDomainException("Company name is required.")
+            : name.Trim();
+        Apply(policy ?? throw new ArgumentNullException(nameof(policy)));
+    }
+
     private void Apply(CompanyPolicy policy)
     {
         BaseCurrencyCode = policy.BaseCurrencyCode;
