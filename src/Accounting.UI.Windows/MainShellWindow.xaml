@@ -398,7 +398,7 @@
         </DockPanel>
       </Border>
       <TabControl Grid.Column="1" ItemsSource="{Binding Workspace.Tabs}" SelectedItem="{Binding Workspace.SelectedTab}" Margin="8">
-        <TabControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding Title}" Margin="8,2"/></DataTemplate></TabControl.ItemTemplate>
+        <TabControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding Title}" Margin="8,2" Foreground="{Binding Foreground,RelativeSource={RelativeSource AncestorType={x:Type TabItem}}}"/></DataTemplate></TabControl.ItemTemplate>
         <TabControl.ContentTemplate><DataTemplate><ContentPresenter Content="{Binding ViewModel}"/></DataTemplate></TabControl.ContentTemplate>
       </TabControl>
     </Grid>
