@@ -96,9 +96,14 @@ jobs:
         shell: pwsh
         run: |
           $env:QODYNEX_SQLITE_PATH = Join-Path $env:RUNNER_TEMP "qodynex-published-ui-tour.db"
+          $env:QODYNEX_SMOKE_FAILURE_PATH = Join-Path $env:RUNNER_TEMP "qodynex-ui-tour-failure.txt"
           Remove-Item $env:QODYNEX_SQLITE_PATH -Force -ErrorAction SilentlyContinue
+          Remove-Item $env:QODYNEX_SMOKE_FAILURE_PATH -Force -ErrorAction SilentlyContinue
           $process = Start-Process -FilePath (Resolve-Path "dist/Qodynex.exe") -ArgumentList "--ui-tour-check" -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw "Full UI tour failed with exit code $($process.ExitCode)." }
+          if ($process.ExitCode -ne 0) {
+            if (Test-Path $env:QODYNEX_SMOKE_FAILURE_PATH) { Get-Content $env:QODYNEX_SMOKE_FAILURE_PATH }
+            throw "Full UI tour failed with exit code $($process.ExitCode)."
+          }
       - name: Upload clean Windows executable
         uses: actions/upload-artifact@v4
         with:
