@@ -268,19 +268,69 @@
 
     <DataTemplate DataType="{x:Type vm:AccountsWorkspaceViewModel}">
       <TabControl Margin="14">
-        <TabItem Header="شجرة الحسابات"><DataGrid ItemsSource="{Binding Accounts}">
-          <DataGrid.Columns><DataGridTextColumn Header="الكود" Binding="{Binding Code}" Width="120"/><DataGridTextColumn Header="الحساب" Binding="{Binding Name}" Width="*"/><DataGridTextColumn Header="النوع" Binding="{Binding Type}" Width="130"/><DataGridTextColumn Header="الطبيعة" Binding="{Binding NormalBalance}" Width="120"/><DataGridCheckBoxColumn Header="ترحيل" Binding="{Binding IsPostable}" Width="80"/></DataGrid.Columns>
-        </DataGrid></TabItem>
-        <TabItem Header="قيود اليومية"><Grid Margin="8"><Grid.RowDefinitions><RowDefinition Height="2*"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-          <DataGrid ItemsSource="{Binding Journals}" SelectedItem="{Binding SelectedJournal}">
-            <DataGrid.Columns><DataGridTextColumn Header="التاريخ" Binding="{Binding DateUtc, StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="160"/><DataGridTextColumn Header="المرجع" Binding="{Binding Reference}" Width="130"/><DataGridTextColumn Header="البيان" Binding="{Binding Description}" Width="*"/><DataGridTextColumn Header="المصدر" Binding="{Binding SourceType}" Width="150"/><DataGridTextColumn Header="مدين" Binding="{Binding Debit, StringFormat={}{0:N2}}" Width="120"/><DataGridTextColumn Header="دائن" Binding="{Binding Credit, StringFormat={}{0:N2}}" Width="120"/></DataGrid.Columns>
-          </DataGrid>
-          <DataGrid Grid.Row="1" ItemsSource="{Binding JournalLines}"><DataGrid.Columns><DataGridTextColumn Header="الكود" Binding="{Binding AccountCode}" Width="120"/><DataGridTextColumn Header="الحساب" Binding="{Binding AccountName}" Width="*"/><DataGridTextColumn Header="البيان" Binding="{Binding Memo}" Width="*"/><DataGridTextColumn Header="مدين" Binding="{Binding Debit, StringFormat={}{0:N2}}" Width="120"/><DataGridTextColumn Header="دائن" Binding="{Binding Credit, StringFormat={}{0:N2}}" Width="120"/></DataGrid.Columns></DataGrid>
-          <StackPanel Grid.Row="2" Orientation="Horizontal"><Button Style="{StaticResource DangerButton}" Content="قيد عكسي للمحدد" Command="{Binding ReverseSelectedCommand}"/><TextBlock Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="12,0"/></StackPanel>
-        </Grid></TabItem>
+        <TabItem Header="شجرة الحسابات">
+          <Grid Margin="8">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <Border Style="{StaticResource CardBorder}">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel><TextBlock Text="الحساب الأب"/><ComboBox ItemsSource="{Binding Accounts}" SelectedItem="{Binding SelectedAccount}" DisplayMemberPath="Name"/></StackPanel>
+                <StackPanel Grid.Column="1"><TextBlock Text="كود الحساب"/><TextBox Text="{Binding NewAccountCode,UpdateSourceTrigger=PropertyChanged}"/></StackPanel>
+                <StackPanel Grid.Column="2"><TextBlock Text="اسم الحساب"/><TextBox Text="{Binding NewAccountName,UpdateSourceTrigger=PropertyChanged}"/></StackPanel>
+                <StackPanel Grid.Column="3"><TextBlock Text="النوع"/><ComboBox ItemsSource="{Binding AccountTypes}" SelectedItem="{Binding NewAccountType}"/></StackPanel>
+                <StackPanel Grid.Column="4"><TextBlock Text="الطبيعة"/><ComboBox ItemsSource="{Binding NormalBalances}" SelectedItem="{Binding NewAccountNormal}" MinWidth="110"/></StackPanel>
+                <StackPanel Grid.Column="5" VerticalAlignment="Bottom">
+                  <CheckBox IsChecked="{Binding NewAccountPostable}" Content="حساب ترحيل" Margin="6"/>
+                  <Button Style="{StaticResource PrimaryButton}" Content="إضافة حساب فرعي" Command="{Binding CreateAccountCommand}"/>
+                </StackPanel>
+              </Grid>
+            </Border>
+            <DataGrid Grid.Row="1" ItemsSource="{Binding Accounts}" SelectedItem="{Binding SelectedAccount}" IsReadOnly="True">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="الكود" Binding="{Binding Code}" Width="120"/>
+                <DataGridTextColumn Header="الحساب" Binding="{Binding Name}" Width="*"/>
+                <DataGridTextColumn Header="النوع" Binding="{Binding Type}" Width="130"/>
+                <DataGridTextColumn Header="الطبيعة" Binding="{Binding NormalBalance}" Width="120"/>
+                <DataGridCheckBoxColumn Header="ترحيل" Binding="{Binding IsPostable}" Width="80"/>
+              </DataGrid.Columns>
+            </DataGrid>
+            <TextBlock Grid.Row="2" Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="6"/>
+          </Grid>
+        </TabItem>
+
+        <TabItem Header="قيود اليومية">
+          <Grid Margin="8">
+            <Grid.RowDefinitions><RowDefinition Height="2*"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <DataGrid ItemsSource="{Binding Journals}" SelectedItem="{Binding SelectedJournal}" IsReadOnly="True">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="التاريخ" Binding="{Binding DateUtc,StringFormat={}{0:yyyy-MM-dd HH:mm}}" Width="160"/>
+                <DataGridTextColumn Header="المرجع" Binding="{Binding Reference}" Width="130"/>
+                <DataGridTextColumn Header="البيان" Binding="{Binding Description}" Width="*"/>
+                <DataGridTextColumn Header="المصدر" Binding="{Binding SourceType}" Width="150"/>
+                <DataGridTextColumn Header="مدين" Binding="{Binding Debit,StringFormat={}{0:N2}}" Width="120"/>
+                <DataGridTextColumn Header="دائن" Binding="{Binding Credit,StringFormat={}{0:N2}}" Width="120"/>
+              </DataGrid.Columns>
+            </DataGrid>
+            <DataGrid Grid.Row="1" ItemsSource="{Binding JournalLines}" IsReadOnly="True">
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="الكود" Binding="{Binding AccountCode}" Width="120"/>
+                <DataGridTextColumn Header="الحساب" Binding="{Binding AccountName}" Width="*"/>
+                <DataGridTextColumn Header="البيان" Binding="{Binding Memo}" Width="*"/>
+                <DataGridTextColumn Header="مدين" Binding="{Binding Debit,StringFormat={}{0:N2}}" Width="120"/>
+                <DataGridTextColumn Header="دائن" Binding="{Binding Credit,StringFormat={}{0:N2}}" Width="120"/>
+              </DataGrid.Columns>
+            </DataGrid>
+            <WrapPanel Grid.Row="2">
+              <Button Content="طباعة القيد A4" Command="{Binding PrintJournalCommand}"/>
+              <Button Style="{StaticResource DangerButton}" Content="إنشاء قيد عكسي" Command="{Binding ReverseSelectedCommand}"/>
+              <TextBlock Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="12,0"/>
+            </WrapPanel>
+          </Grid>
+        </TabItem>
+
         <TabItem Header="قيد يدوي">
           <Grid Margin="14">
-            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <Grid>
               <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
               <StackPanel><TextBlock Text="المرجع" Foreground="{StaticResource MutedBrush}"/><TextBox Text="{Binding ManualReference,UpdateSourceTrigger=PropertyChanged}"/></StackPanel>
@@ -288,29 +338,44 @@
             </Grid>
             <DataGrid Grid.Row="1" ItemsSource="{Binding ManualLines}" SelectedItem="{Binding SelectedManualLine}" IsReadOnly="False" CanUserAddRows="False">
               <DataGrid.Columns>
-                <DataGridTemplateColumn Header="الحساب" Width="2*"><DataGridTemplateColumn.CellTemplate><DataTemplate>
-                  <ComboBox ItemsSource="{Binding DataContext.PostableAccounts,RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}}"
-                            SelectedItem="{Binding Account,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" DisplayMemberPath="Name"
-                            IsEditable="True" IsTextSearchEnabled="True" TextSearch.TextPath="Name"/>
-                </DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="الحساب" Width="2*">
+                  <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                    <ComboBox ItemsSource="{Binding DataContext.PostableAccounts,RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}}"
+                              SelectedItem="{Binding Account,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" DisplayMemberPath="Name"
+                              IsEditable="True" IsTextSearchEnabled="True" TextSearch.TextPath="Name"/>
+                  </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="مدين" Binding="{Binding Debit,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged,StringFormat={}{0:N2}}" Width="150"/>
                 <DataGridTextColumn Header="دائن" Binding="{Binding Credit,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged,StringFormat={}{0:N2}}" Width="150"/>
                 <DataGridTextColumn Header="بيان السطر" Binding="{Binding Memo,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" Width="2*"/>
               </DataGrid.Columns>
             </DataGrid>
-            <StackPanel Grid.Row="2" Orientation="Horizontal">
-              <Button Content="+ إضافة سطر (Insert)" Command="{Binding AddManualLineCommand}"/>
+            <WrapPanel Grid.Row="2">
+              <Button Content="إضافة سطر (Insert)" Command="{Binding AddManualLineCommand}"/>
               <Button Content="حذف السطر" Command="{Binding RemoveManualLineCommand}"/>
-            </StackPanel>
-            <Grid Grid.Row="3"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            </WrapPanel>
+            <Border Grid.Row="3" Style="{StaticResource CardBorder}" Padding="12,8">
+              <TextBlock Text="{Binding ManualBalanceText}" Foreground="{Binding ManualBalanceBrush}" FontSize="17" FontWeight="Bold"/>
+            </Border>
+            <Grid Grid.Row="4">
+              <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
               <TextBlock Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextWrapping="Wrap"/>
               <Button Grid.Column="1" Style="{StaticResource PrimaryButton}" Content="ترحيل القيد اليدوي F5" Command="{Binding PostManualCommand}" MinWidth="190"/>
             </Grid>
           </Grid>
         </TabItem>
-        <TabItem Header="ميزان المراجعة"><DataGrid ItemsSource="{Binding TrialBalance}">
-          <DataGrid.Columns><DataGridTextColumn Header="الكود" Binding="{Binding Code}" Width="120"/><DataGridTextColumn Header="الحساب" Binding="{Binding Name}" Width="*"/><DataGridTextColumn Header="مدين" Binding="{Binding Debit, StringFormat={}{0:N2}}" Width="150"/><DataGridTextColumn Header="دائن" Binding="{Binding Credit, StringFormat={}{0:N2}}" Width="150"/><DataGridTextColumn Header="الرصيد" Binding="{Binding Balance, StringFormat={}{0:N2}}" Width="150"/></DataGrid.Columns>
-        </DataGrid></TabItem>
+
+        <TabItem Header="ميزان المراجعة">
+          <DataGrid ItemsSource="{Binding TrialBalance}" IsReadOnly="True">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="الكود" Binding="{Binding Code}" Width="120"/>
+              <DataGridTextColumn Header="الحساب" Binding="{Binding Name}" Width="*"/>
+              <DataGridTextColumn Header="مدين" Binding="{Binding Debit,StringFormat={}{0:N2}}" Width="150"/>
+              <DataGridTextColumn Header="دائن" Binding="{Binding Credit,StringFormat={}{0:N2}}" Width="150"/>
+              <DataGridTextColumn Header="الرصيد" Binding="{Binding Balance,StringFormat={}{0:N2}}" Width="150"/>
+            </DataGrid.Columns>
+          </DataGrid>
+        </TabItem>
       </TabControl>
     </DataTemplate>
 

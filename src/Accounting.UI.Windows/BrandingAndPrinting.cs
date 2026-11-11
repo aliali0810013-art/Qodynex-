@@ -254,6 +254,50 @@ public static class ReportPrintService
         return doc;
     }
 
+    public static FlowDocument BuildJournal(
+        JournalHeaderRow header,
+        IEnumerable<JournalDetailRow> rows,
+        CompanyBrandingSnapshot brand)
+    {
+        var values = rows.ToArray();
+        var doc = CreateDocument(false);
+        AddHeader(doc, brand, false);
+        var title = new Paragraph { TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 8, 0, 14) };
+        title.Inlines.Add(new Bold(new Run("قيد يومية")) { FontSize = 24 });
+        title.Inlines.Add(new LineBreak());
+        title.Inlines.Add(new Run($"المرجع: {header.Reference}   |   التاريخ: {header.DateUtc.ToLocalTime():yyyy-MM-dd HH:mm}"));
+        title.Inlines.Add(new LineBreak());
+        title.Inlines.Add(new Run(header.Description));
+        doc.Blocks.Add(title);
+
+        var table = new Table { CellSpacing = 0 };
+        foreach (var width in new[] { 100d, 220d, 220d, 100d, 100d })
+            table.Columns.Add(new TableColumn { Width = new GridLength(width) });
+        var group = new TableRowGroup();
+        table.RowGroups.Add(group);
+        var heading = new TableRow();
+        foreach (var text in new[] { "الكود", "الحساب", "البيان", "مدين", "دائن" })
+            heading.Cells.Add(Cell(text, true));
+        group.Rows.Add(heading);
+        foreach (var row in values)
+        {
+            var line = new TableRow();
+            line.Cells.Add(Cell(row.AccountCode));
+            line.Cells.Add(Cell(row.AccountName));
+            line.Cells.Add(Cell(row.Memo));
+            line.Cells.Add(Cell(row.Debit.ToString("N2")));
+            line.Cells.Add(Cell(row.Credit.ToString("N2")));
+            group.Rows.Add(line);
+        }
+        doc.Blocks.Add(table);
+        doc.Blocks.Add(new Paragraph(new Bold(new Run(
+            $"إجمالي المدين: {values.Sum(x => x.Debit):N2}     إجمالي الدائن: {values.Sum(x => x.Credit):N2}")))
+        { Margin = new Thickness(0, 14, 0, 0) });
+        doc.Blocks.Add(new Paragraph(new Run("توقيع المُعد: ____________________     اعتماد: ____________________"))
+        { Margin = new Thickness(0, 30, 0, 0) });
+        return doc;
+    }
+
     private static FlowDocument CreateDocument(bool thermal)
     {
         var doc = new FlowDocument

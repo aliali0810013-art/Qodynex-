@@ -14,7 +14,7 @@ public sealed record WarehouseLookup(Guid Id, string Code, string Name);
 public sealed record InventoryGridRow(Guid ItemId, string Sku, string Name, string UnitName, decimal Quantity, decimal InventoryValue, decimal AverageCost, string CartonText);
 public sealed record AccountTreeRow(Guid Id, string Code, string Name, Guid? ParentAccountId, AccountType Type, NormalBalance NormalBalance, bool IsPostable);
 public sealed record JournalHeaderRow(Guid Id, DateTimeOffset DateUtc, string Reference, string Description, string SourceType, Guid SourceDocumentId, decimal Debit, decimal Credit, bool IsReversal);
-public sealed record JournalDetailRow(Guid Id, string AccountCode, string AccountName, string Memo, decimal Debit, decimal Credit);
+public sealed record JournalDetailRow(Guid Id, Guid AccountId, string AccountCode, string AccountName, string Memo, decimal Debit, decimal Credit);
 public sealed record VoucherHistoryRow(Guid Id, string Kind, string LocalNumber, string OfficialNumber, DateTimeOffset DateUtc, string PartnerName, decimal Amount, string Description);
 public sealed record PartnerStatementResult(string PartnerName, decimal Balance, IReadOnlyList<LedgerRow> Rows);
 public sealed record OutboxUiRow(Guid Id, string EventType, string Status, int RetryCount, DateTimeOffset CreatedAtUtc, DateTimeOffset? LastAttemptAtUtc);
@@ -161,6 +161,55 @@ public sealed partial class WindowsAccountingFacade
             .Select(x => new AccountTreeRow(x.Id, x.Code, x.Name, x.ParentAccountId, x.AccountType, x.NormalBalance, x.IsPostable))
             .ToListAsync(ct);
 
+    public async Task<Guid> CreateChildAccountAsync(
+        Guid? parentAccountId,
+        string code,
+        string name,
+        AccountType accountType,
+        NormalBalance normalBalance,
+        bool isPostable,
+        CancellationToken ct = default)
+    {
+        code = code.Trim();
+        name = name.Trim();
+        if (code.Length == 0) throw new InvalidOperationException("كود الحساب مطلوب.");
+        if (name.Length == 0) throw new InvalidOperationException("اسم الحساب مطلوب.");
+
+        Account? parent = null;
+        if (parentAccountId.HasValue)
+        {
+            parent = await _db.Accounts.SingleOrDefaultAsync(
+                x => x.Id == parentAccountId.Value
+                  && x.CompanyId == _user.CompanyId
+                  && x.BranchId == _user.BranchId
+                  && x.IsActive,
+                ct).ConfigureAwait(false);
+            if (parent is null) throw new InvalidOperationException("الحساب الأب غير موجود.");
+            if (parent.IsPostable)
+                throw new InvalidOperationException("لا يمكن إضافة حساب فرعي تحت حساب ترحيل. اختر حساباً رئيسياً غير قابل للترحيل.");
+        }
+
+        var duplicate = await _db.Accounts.AnyAsync(
+            x => x.CompanyId == _user.CompanyId
+              && x.BranchId == _user.BranchId
+              && x.Code == code,
+            ct).ConfigureAwait(false);
+        if (duplicate) throw new InvalidOperationException("كود الحساب مستخدم مسبقاً.");
+
+        var account = new Account(
+            _user.CompanyId,
+            _user.BranchId,
+            code,
+            name,
+            accountType,
+            normalBalance,
+            isPostable,
+            parentAccountId);
+        _db.Accounts.Add(account);
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        return account.Id;
+    }
+
     public async Task<IReadOnlyList<JournalHeaderRow>> GetRecentJournalsAsync(int take = 200, CancellationToken ct = default)
     {
         var rows = await _db.JournalEntries.AsNoTracking()
@@ -184,7 +233,7 @@ public sealed partial class WindowsAccountingFacade
          join account in _db.Accounts.AsNoTracking() on line.AccountId equals account.Id
          where line.JournalEntryId == journalId && line.CompanyId == _user.CompanyId && line.BranchId == _user.BranchId
          orderby account.Code
-         select new JournalDetailRow(line.Id, account.Code, account.Name, line.Memo, line.Debit, line.Credit)).ToListAsync(ct);
+         select new JournalDetailRow(line.Id, line.AccountId, account.Code, account.Name, line.Memo, line.Debit, line.Credit)).ToListAsync(ct);
 
     public async Task<IReadOnlyList<VoucherHistoryRow>> GetVoucherHistoryAsync(CancellationToken ct = default)
     {

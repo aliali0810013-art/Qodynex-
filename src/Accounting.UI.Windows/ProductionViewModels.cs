@@ -419,58 +419,183 @@ public sealed class ManualJournalLineViewModel : ObservableObject
 
 public sealed class AccountsWorkspaceViewModel : ObservableObject, IWorkspaceActionTarget
 {
-    private readonly WindowsAccountingFacade _facade; private JournalHeaderRow? _selectedJournal; private AccountLookup? _manualDebit,_manualCredit;
-    private decimal _manualAmount; private string _manualDescription="",_manualReference="",_status="جاهز";
+    private readonly WindowsAccountingFacade _facade;
+    private JournalHeaderRow? _selectedJournal;
+    private AccountTreeRow? _selectedAccount;
+    private ManualJournalLineViewModel? _selectedManualLine;
+    private string _manualDescription="",_manualReference="",_status="جاهز";
+    private string _newAccountCode="",_newAccountName="";
+    private AccountType _newAccountType=AccountType.Asset;
+    private NormalBalance _newAccountNormal=NormalBalance.Debit;
+    private bool _newAccountPostable=true;
+
     public ObservableCollection<AccountTreeRow> Accounts { get; }=new();
     public ObservableCollection<JournalHeaderRow> Journals { get; }=new();
     public ObservableCollection<JournalDetailRow> JournalLines { get; }=new();
     public ObservableCollection<TrialBalanceRow> TrialBalance { get; }=new();
     public ObservableCollection<AccountLookup> PostableAccounts { get; }=new();
     public ObservableCollection<ManualJournalLineViewModel> ManualLines { get; }=new();
-    private ManualJournalLineViewModel? _selectedManualLine;
-    public ManualJournalLineViewModel? SelectedManualLine { get=>_selectedManualLine; set=>Set(ref _selectedManualLine,value); }
-    public JournalHeaderRow? SelectedJournal { get=>_selectedJournal; set { if(Set(ref _selectedJournal,value)) _=LoadJournalLinesAsync(); } }
-    public AccountLookup? ManualDebitAccount { get=>_manualDebit; set=>Set(ref _manualDebit,value); }
-    public AccountLookup? ManualCreditAccount { get=>_manualCredit; set=>Set(ref _manualCredit,value); }
-    public decimal ManualAmount { get=>_manualAmount; set=>Set(ref _manualAmount,value); }
+
+    public IReadOnlyList<AccountType> AccountTypes { get; }=Enum.GetValues<AccountType>();
+    public IReadOnlyList<NormalBalance> NormalBalances { get; }=Enum.GetValues<NormalBalance>();
+
+    public AccountTreeRow? SelectedAccount { get=>_selectedAccount; set
+        {
+            if(Set(ref _selectedAccount,value)&&value is not null)
+            {
+                NewAccountType=value.Type;
+                NewAccountNormal=value.NormalBalance;
+            }
+        }
+    }
+    public JournalHeaderRow? SelectedJournal { get=>_selectedJournal; set
+        {
+            if(Set(ref _selectedJournal,value))
+            {
+                _=LoadJournalLinesAsync();
+                ReverseSelectedCommand.Refresh();
+                PrintJournalCommand.Refresh();
+            }
+        }
+    }
+    public ManualJournalLineViewModel? SelectedManualLine { get=>_selectedManualLine; set
+        {
+            if(Set(ref _selectedManualLine,value))RemoveManualLineCommand.Refresh();
+        }
+    }
+
     public string ManualDescription { get=>_manualDescription; set=>Set(ref _manualDescription,value); }
     public string ManualReference { get=>_manualReference; set=>Set(ref _manualReference,value); }
     public string Status { get=>_status; private set=>Set(ref _status,value); }
-    public AsyncRelayCommand PostManualCommand { get; } public AsyncRelayCommand ReverseSelectedCommand { get; }
-    public RelayCommand AddManualLineCommand { get; } public RelayCommand RemoveManualLineCommand { get; }
+
+    public string NewAccountCode { get=>_newAccountCode; set=>Set(ref _newAccountCode,value); }
+    public string NewAccountName { get=>_newAccountName; set=>Set(ref _newAccountName,value); }
+    public AccountType NewAccountType { get=>_newAccountType; set=>Set(ref _newAccountType,value); }
+    public NormalBalance NewAccountNormal { get=>_newAccountNormal; set=>Set(ref _newAccountNormal,value); }
+    public bool NewAccountPostable { get=>_newAccountPostable; set=>Set(ref _newAccountPostable,value); }
+
+    public decimal ManualDebitTotal => ManualLines.Sum(x=>x.Debit);
+    public decimal ManualCreditTotal => ManualLines.Sum(x=>x.Credit);
+    public decimal ManualDifference => Math.Abs(ManualDebitTotal-ManualCreditTotal);
+    public bool IsManualBalanced => ManualDebitTotal>0m&&ManualDebitTotal==ManualCreditTotal;
+    public string ManualBalanceText => IsManualBalanced
+        ?$"متوازن ✓  مدين {ManualDebitTotal:N2} = دائن {ManualCreditTotal:N2}"
+        :$"غير متوازن — مدين {ManualDebitTotal:N2} | دائن {ManualCreditTotal:N2} | الفرق {ManualDifference:N2}";
+    public Brush ManualBalanceBrush => IsManualBalanced?Brushes.SeaGreen:Brushes.Firebrick;
+
+    public AsyncRelayCommand PostManualCommand { get; }
+    public AsyncRelayCommand ReverseSelectedCommand { get; }
+    public AsyncRelayCommand PrintJournalCommand { get; }
+    public AsyncRelayCommand CreateAccountCommand { get; }
+    public RelayCommand AddManualLineCommand { get; }
+    public RelayCommand RemoveManualLineCommand { get; }
+
     public AccountsWorkspaceViewModel(WindowsAccountingFacade facade)
     {
-        _facade=facade; PostManualCommand=new AsyncRelayCommand(PostManualAsync); ReverseSelectedCommand=new AsyncRelayCommand(ReverseSelectedAsync);
-        AddManualLineCommand=new RelayCommand(AddManualLine); RemoveManualLineCommand=new RelayCommand(RemoveManualLine,()=>SelectedManualLine is not null);
+        _facade=facade;
+        PostManualCommand=new AsyncRelayCommand(PostManualAsync);
+        ReverseSelectedCommand=new AsyncRelayCommand(ReverseSelectedAsync,()=>SelectedJournal is not null);
+        PrintJournalCommand=new AsyncRelayCommand(PrintJournalAsync,()=>SelectedJournal is not null);
+        CreateAccountCommand=new AsyncRelayCommand(CreateAccountAsync);
+        AddManualLineCommand=new RelayCommand(AddManualLine);
+        RemoveManualLineCommand=new RelayCommand(RemoveManualLine,()=>SelectedManualLine is not null);
         _=RefreshAsync();
     }
+
     public async Task RefreshAsync()
     {
         try
         {
-            var a=_facade.GetAccountTreeAsync(); var j=_facade.GetRecentJournalsAsync(); var t=_facade.GetTrialBalanceAsync(); var p=_facade.SearchAccountsAsync("");
+            var a=_facade.GetAccountTreeAsync();
+            var j=_facade.GetRecentJournalsAsync();
+            var t=_facade.GetTrialBalanceAsync();
+            var p=_facade.SearchAccountsAsync("");
             await Task.WhenAll(a,j,t,p).ConfigureAwait(true);
-            Accounts.Clear();foreach(var x in a.Result)Accounts.Add(x); Journals.Clear();foreach(var x in j.Result)Journals.Add(x);
-            TrialBalance.Clear();foreach(var x in t.Result)TrialBalance.Add(x); PostableAccounts.Clear();foreach(var x in p.Result)PostableAccounts.Add(x);
-            ManualDebitAccount??=PostableAccounts.FirstOrDefault(); ManualCreditAccount??=PostableAccounts.Skip(1).FirstOrDefault();
+
+            Accounts.Clear();foreach(var x in a.Result)Accounts.Add(x);
+            Journals.Clear();foreach(var x in j.Result)Journals.Add(x);
+            TrialBalance.Clear();foreach(var x in t.Result)TrialBalance.Add(x);
+            PostableAccounts.Clear();foreach(var x in p.Result)PostableAccounts.Add(x);
+
             if(ManualLines.Count==0)
             {
-                ManualLines.Add(new ManualJournalLineViewModel{Account=PostableAccounts.FirstOrDefault(),Debit=0m,Memo=""});
-                ManualLines.Add(new ManualJournalLineViewModel{Account=PostableAccounts.Skip(1).FirstOrDefault(),Credit=0m,Memo=""});
+                AddManualLineCore(new ManualJournalLineViewModel{Account=PostableAccounts.FirstOrDefault(),Memo=""});
+                AddManualLineCore(new ManualJournalLineViewModel{Account=PostableAccounts.Skip(1).FirstOrDefault(),Memo=""});
             }
+            SelectedAccount??=Accounts.FirstOrDefault(x=>!x.IsPostable)??Accounts.FirstOrDefault();
+            RefreshManualBalance();
             Status="تم تحديث الحسابات والقيود وميزان المراجعة.";
-        }catch(Exception ex){Status=ex.Message;}
+        }
+        catch(Exception ex){Status=ex.Message;}
     }
-    private async Task LoadJournalLinesAsync(){JournalLines.Clear();if(SelectedJournal is null)return;foreach(var x in await _facade.GetJournalDetailsAsync(SelectedJournal.Id).ConfigureAwait(true))JournalLines.Add(x);}
+
+    private async Task LoadJournalLinesAsync()
+    {
+        JournalLines.Clear();
+        if(SelectedJournal is null)return;
+        foreach(var x in await _facade.GetJournalDetailsAsync(SelectedJournal.Id).ConfigureAwait(true))JournalLines.Add(x);
+    }
+
     private void AddManualLine()
     {
         var line=new ManualJournalLineViewModel{Account=PostableAccounts.FirstOrDefault(),Memo=ManualDescription};
-        ManualLines.Add(line); SelectedManualLine=line; RemoveManualLineCommand.Refresh();
+        AddManualLineCore(line);
+        SelectedManualLine=line;
+        RemoveManualLineCommand.Refresh();
+        RefreshManualBalance();
     }
+
+    private void AddManualLineCore(ManualJournalLineViewModel line)
+    {
+        line.PropertyChanged+=OnManualLineChanged;
+        ManualLines.Add(line);
+    }
+
     private void RemoveManualLine()
     {
         if(SelectedManualLine is null||ManualLines.Count<=2)return;
-        ManualLines.Remove(SelectedManualLine); SelectedManualLine=ManualLines.LastOrDefault(); RemoveManualLineCommand.Refresh();
+        SelectedManualLine.PropertyChanged-=OnManualLineChanged;
+        ManualLines.Remove(SelectedManualLine);
+        SelectedManualLine=ManualLines.LastOrDefault();
+        RemoveManualLineCommand.Refresh();
+        RefreshManualBalance();
+    }
+
+    private void OnManualLineChanged(object? sender,System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if(e.PropertyName is nameof(ManualJournalLineViewModel.Debit) or nameof(ManualJournalLineViewModel.Credit))
+            RefreshManualBalance();
+    }
+
+    private void RefreshManualBalance()
+    {
+        Raise(nameof(ManualDebitTotal));
+        Raise(nameof(ManualCreditTotal));
+        Raise(nameof(ManualDifference));
+        Raise(nameof(IsManualBalanced));
+        Raise(nameof(ManualBalanceText));
+        Raise(nameof(ManualBalanceBrush));
+    }
+
+    private async Task CreateAccountAsync()
+    {
+        try
+        {
+            var parent=SelectedAccount;
+            var id=await _facade.CreateChildAccountAsync(
+                parent?.Id,
+                NewAccountCode,
+                NewAccountName,
+                NewAccountType,
+                NewAccountNormal,
+                NewAccountPostable).ConfigureAwait(true);
+            Status=$"تم إنشاء الحساب: {id:N}";
+            NewAccountCode="";
+            NewAccountName="";
+            await RefreshAsync().ConfigureAwait(true);
+            SelectedAccount=Accounts.FirstOrDefault(x=>x.Id==id)??SelectedAccount;
+        }
+        catch(Exception ex){Status=ex.Message;}
     }
 
     private async Task PostManualAsync()
@@ -478,29 +603,68 @@ public sealed class AccountsWorkspaceViewModel : ObservableObject, IWorkspaceAct
         try
         {
             var valid=ManualLines.Where(x=>x.Account is not null&&(x.Debit>0m||x.Credit>0m))
-                .Select(x=>new ManualJournalLine(x.Account!.Id,x.Debit,x.Credit,string.IsNullOrWhiteSpace(x.Memo)?ManualDescription:x.Memo)).ToArray();
+                .Select(x=>new ManualJournalLine(
+                    x.Account!.Id,
+                    x.Debit,
+                    x.Credit,
+                    string.IsNullOrWhiteSpace(x.Memo)?ManualDescription:x.Memo))
+                .ToArray();
             if(valid.Length<2)throw new InvalidOperationException("أدخل سطرين محاسبيين على الأقل.");
-            var debit=valid.Sum(x=>x.Debit);var credit=valid.Sum(x=>x.Credit);
-            if(debit<=0m||debit!=credit)throw new InvalidOperationException($"القيد غير متوازن: مدين {debit:N2} / دائن {credit:N2}.");
+            if(!IsManualBalanced)throw new InvalidOperationException($"القيد غير متوازن: الفرق {ManualDifference:N2}.");
+
             var id=await _facade.CreateManualJournalAsync(ManualDescription,ManualReference,valid).ConfigureAwait(true);
             Status=$"تم ترحيل القيد اليدوي محلياً: {id:N}";
+            foreach(var line in ManualLines)line.PropertyChanged-=OnManualLineChanged;
             ManualLines.Clear();
-            ManualLines.Add(new ManualJournalLineViewModel{Account=PostableAccounts.FirstOrDefault(),Memo=""});
-            ManualLines.Add(new ManualJournalLineViewModel{Account=PostableAccounts.Skip(1).FirstOrDefault(),Memo=""});
+            AddManualLineCore(new ManualJournalLineViewModel{Account=PostableAccounts.FirstOrDefault(),Memo=""});
+            AddManualLineCore(new ManualJournalLineViewModel{Account=PostableAccounts.Skip(1).FirstOrDefault(),Memo=""});
+            RefreshManualBalance();
             await RefreshAsync().ConfigureAwait(true);
-        }catch(Exception ex){Status=ex.Message;}
+        }
+        catch(Exception ex){Status=ex.Message;}
     }
+
     private async Task ReverseSelectedAsync()
     {
         try
         {
             if(SelectedJournal is null)throw new InvalidOperationException("حدد قيداً أولاً.");
             if(string.Equals(SelectedJournal.SourceType,"ManualJournal",StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("القيد اليدوي المحلي لا يرسل للخادم حالياً؛ أنشئ قيداً معاكساً متوازناً من نفس الشاشة.");
-            var r=await _facade.ReverseDocumentAsync(SelectedJournal.SourceDocumentId).ConfigureAwait(true); Status=$"تم إنشاء القيد العكسي: {r.OperationId:N}"; await RefreshAsync().ConfigureAwait(true);
-        }catch(Exception ex){Status=ex.Message;}
+            {
+                var details=await _facade.GetJournalDetailsAsync(SelectedJournal.Id).ConfigureAwait(true);
+                var reverse=details.Select(x=>new ManualJournalLine(x.AccountId,x.Credit,x.Debit,$"عكس: {x.Memo}")).ToArray();
+                var id=await _facade.CreateManualJournalAsync(
+                    $"عكس القيد: {SelectedJournal.Description}",
+                    $"REV-{SelectedJournal.Reference}",
+                    reverse).ConfigureAwait(true);
+                Status=$"تم إنشاء القيد اليدوي العكسي: {id:N}";
+            }
+            else
+            {
+                var r=await _facade.ReverseDocumentAsync(SelectedJournal.SourceDocumentId).ConfigureAwait(true);
+                Status=$"تم إنشاء القيد العكسي: {r.OperationId:N}";
+            }
+            await RefreshAsync().ConfigureAwait(true);
+        }
+        catch(Exception ex){Status=ex.Message;}
     }
-    public Task SaveAndPostAsync()=>PostManualAsync(); public Task QuickSearchAsync()=>RefreshAsync(); public Task OpenSelectedDetailsAsync()=>LoadJournalLinesAsync();
+
+    private async Task PrintJournalAsync()
+    {
+        try
+        {
+            if(SelectedJournal is null)throw new InvalidOperationException("حدد قيداً أولاً.");
+            if(JournalLines.Count==0)await LoadJournalLinesAsync().ConfigureAwait(true);
+            var brand=await _facade.GetBrandingAsync().ConfigureAwait(true);
+            var doc=ReportPrintService.BuildJournal(SelectedJournal,JournalLines,brand);
+            InvoicePrintService.Preview(doc,$"قيد يومية — {SelectedJournal.Reference}");
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+
+    public Task SaveAndPostAsync()=>PostManualAsync();
+    public Task QuickSearchAsync()=>RefreshAsync();
+    public Task OpenSelectedDetailsAsync()=>PrintJournalAsync();
 }
 
 public sealed class ReportsSyncViewModel : ObservableObject, IWorkspaceActionTarget
