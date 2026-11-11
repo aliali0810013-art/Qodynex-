@@ -310,11 +310,44 @@ END;";
 public sealed class LocalDatabaseBootstrapper
 {
     private readonly LocalAccountingDbContext _db;
+    public DatabaseUpgradeResult LastUpgradeResult { get; private set; } = DatabaseUpgradeResult.None;
+
     public LocalDatabaseBootstrapper(LocalAccountingDbContext db) => _db = db;
-    public async Task InitializeAsync(CancellationToken ct = default)
+
+    public async Task<DatabaseUpgradeResult> InitializeAsync(CancellationToken ct = default)
     {
-        await _db.Database.OpenConnectionAsync(ct); try { await SqliteSchemaGuard.ApplyPragmasAsync(_db, ct); await _db.Database.MigrateAsync(ct); await SqliteSchemaGuard.ApplyTriggersAsync(_db, ct); }
-        finally { await _db.Database.CloseConnectionAsync(); }
+        var upgrader = new DatabaseSchemaUpgrader(_db);
+        LastUpgradeResult = await upgrader.PrepareAsync(ct).ConfigureAwait(false);
+
+        try
+        {
+            await InitializeOnceAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (upgrader.CanRecoverFile && DatabaseSchemaUpgrader.IsRecoverableSchemaFailure(ex))
+        {
+            try { await _db.Database.CloseConnectionAsync().ConfigureAwait(false); } catch { }
+            _db.ChangeTracker.Clear();
+            LastUpgradeResult = await upgrader.BackupAndResetAsync(
+                $"EF migration/schema initialization failed: {ex.GetType().Name}: {ex.Message}", ct).ConfigureAwait(false);
+            await InitializeOnceAsync(ct).ConfigureAwait(false);
+        }
+
+        return LastUpgradeResult;
+    }
+
+    private async Task InitializeOnceAsync(CancellationToken ct)
+    {
+        await _db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await SqliteSchemaGuard.ApplyPragmasAsync(_db, ct).ConfigureAwait(false);
+            await _db.Database.MigrateAsync(ct).ConfigureAwait(false);
+            await SqliteSchemaGuard.ApplyTriggersAsync(_db, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            await _db.Database.CloseConnectionAsync().ConfigureAwait(false);
+        }
     }
 }
 

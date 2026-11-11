@@ -13,6 +13,9 @@ public partial class MainShellWindow : Window
     private readonly BackgroundSyncCoordinator? _syncCoordinator;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly DispatcherTimer _statusTimer;
+    private readonly DispatcherTimer _errorBannerTimer;
+    private bool _isViewReady;
+    private bool _isBusy;
 
     public MainShellWindow(ShellViewModel viewModel, BackgroundSyncCoordinator? syncCoordinator)
     {
@@ -21,21 +24,43 @@ public partial class MainShellWindow : Window
         _syncCoordinator = syncCoordinator;
         DataContext = viewModel;
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-        _statusTimer.Tick += async (_, _) => await _viewModel.RefreshStatusAsync().ConfigureAwait(true);
+        _statusTimer.Tick += async (_, _) =>
+        {
+            if (!_isViewReady || _isBusy) return;
+            try { await _viewModel.RefreshStatusAsync().ConfigureAwait(true); }
+            catch (Exception ex) { ReportUiError(ex, "تحديث حالة النظام"); }
+        };
+        _errorBannerTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+        _errorBannerTimer.Tick += (_, _) => { _errorBannerTimer.Stop(); RuntimeErrorBanner.Visibility = Visibility.Collapsed; };
+        RuntimeErrorHub.ErrorRaised += OnRuntimeError;
         Loaded += OnLoaded;
         Closing += OnClosing;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        await _viewModel.RefreshStatusAsync().ConfigureAwait(true);
-        _statusTimer.Start();
-        if (_syncCoordinator is not null)
-            _ = Task.Run(() => _syncCoordinator.RunLoopAsync(_lifetime.Token), _lifetime.Token);
+        if (_isBusy) return;
+        _isBusy = true;
+        _isViewReady = false;
+        try
+        {
+            await _viewModel.RefreshStatusAsync().ConfigureAwait(true);
+            _statusTimer.Start();
+            if (_syncCoordinator is not null)
+                _ = Task.Run(() => _syncCoordinator.RunLoopAsync(_lifetime.Token), _lifetime.Token);
+            _isViewReady = true;
+        }
+        catch (Exception ex)
+        {
+            ReportUiError(ex, "تهيئة الواجهة الرئيسية");
+            _isViewReady = true;
+        }
+        finally { _isBusy = false; }
     }
 
     private async void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (!_isViewReady || _isBusy) return;
         if (e.Key == Key.F2) { e.Handled = true; _viewModel.OpenSalesCommand.Execute(null); return; }
         if (e.Key == Key.F3) { e.Handled = true; _viewModel.OpenQuickSearch(); return; }
         if (e.Key is Key.F5 or Key.F7)
@@ -51,35 +76,53 @@ public partial class MainShellWindow : Window
         }
     }
 
-    private void OnNewClick(object sender, RoutedEventArgs e) => _viewModel.OpenSalesCommand.Execute(null);
+    private void OnNewClick(object sender, RoutedEventArgs e)
+    {
+        if (!_isViewReady || _isBusy) return;
+        _viewModel.OpenSalesCommand.Execute(null);
+    }
 
-    private void OnQuickSearchClick(object sender, RoutedEventArgs e) => _viewModel.OpenQuickSearch();
+    private void OnQuickSearchClick(object sender, RoutedEventArgs e)
+    {
+        if (!_isViewReady || _isBusy) return;
+        _viewModel.OpenQuickSearch();
+    }
 
-    private async void OnSavePostClick(object sender, RoutedEventArgs e) =>
-        await _viewModel.Shortcuts.HandleAsync(Key.F5).ConfigureAwait(true);
+    private async void OnSavePostClick(object sender, RoutedEventArgs e)
+    {
+        if (!_isViewReady || _isBusy) return;
+        try { await _viewModel.Shortcuts.HandleAsync(Key.F5).ConfigureAwait(true); }
+        catch (Exception ex) { ReportUiError(ex, "حفظ وترحيل"); }
+    }
 
-    private async void OnDetailsClick(object sender, RoutedEventArgs e) =>
-        await _viewModel.Shortcuts.HandleAsync(Key.F7).ConfigureAwait(true);
+    private async void OnDetailsClick(object sender, RoutedEventArgs e)
+    {
+        if (!_isViewReady || _isBusy) return;
+        try { await _viewModel.Shortcuts.HandleAsync(Key.F7).ConfigureAwait(true); }
+        catch (Exception ex) { ReportUiError(ex, "فتح التفاصيل"); }
+    }
 
-    private async void OnSyncNowClick(object sender, RoutedEventArgs e) =>
+    private async void OnSyncNowClick(object sender, RoutedEventArgs e)
+    {
+        if (!_isViewReady || _isBusy) return;
         await SyncNowAsync().ConfigureAwait(true);
+    }
 
     private async void OnThemeToggleClick(object sender, RoutedEventArgs e)
     {
+        if (!_isViewReady || _isBusy) return;
         try
         {
             await _viewModel.ToggleThemeAsync().ConfigureAwait(true);
             if (sender is Button button)
                 button.Content = ThemeManager.IsDark ? "☀️ وضع نهاري" : "🌙 وضع ليلي";
         }
-        catch (Exception ex)
-        {
-            MessageBox.Show(ex.Message, "المظهر", MessageBoxButton.OK, MessageBoxImage.Warning);
-        }
+        catch (Exception ex) { ReportUiError(ex, "تبديل المظهر"); }
     }
 
     private void OnQuickPartnerClick(object sender, RoutedEventArgs e)
     {
+        if (!_isViewReady || _isBusy) return;
         if (sender is not Button button || button.DataContext is not InvoiceEditorViewModel vm) return;
         var name = new TextBox { Margin = new Thickness(8), MinWidth = 300 };
         var phone = new TextBox { Margin = new Thickness(8), MinWidth = 300 };
@@ -99,13 +142,14 @@ public partial class MainShellWindow : Window
         ok.Click += async (_, _) =>
         {
             try { await vm.CreateQuickPartnerAsync(name.Text, phone.Text).ConfigureAwait(true); window.DialogResult = true; }
-            catch (Exception ex) { MessageBox.Show(ex.Message, window.Title, MessageBoxButton.OK, MessageBoxImage.Warning); }
+            catch (Exception ex) { ReportUiError(ex, window.Title); }
         };
         window.ShowDialog();
     }
 
     private async void OnInvoiceLineItemChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (!_isViewReady || _isBusy) return;
         if (sender is not ComboBox combo || combo.DataContext is not InvoiceLineViewModel line || combo.SelectedItem is not ItemLookup item)
             return;
         var current = combo as DependencyObject;
@@ -114,7 +158,7 @@ public partial class MainShellWindow : Window
         if (current is DataGrid grid && grid.DataContext is InvoiceEditorViewModel vm)
         {
             try { await vm.ChangeLineItemAsync(line, item).ConfigureAwait(true); }
-            catch (Exception ex) { MessageBox.Show(ex.Message, "تغيير الصنف", MessageBoxButton.OK, MessageBoxImage.Warning); }
+            catch (Exception ex) { ReportUiError(ex, "تغيير الصنف"); }
         }
     }
 
@@ -124,13 +168,14 @@ public partial class MainShellWindow : Window
         {
             try { await _syncCoordinator.RunOnceAsync(_lifetime.Token).ConfigureAwait(true); }
             catch (OperationCanceledException) { }
-            catch (Exception ex) { MessageBox.Show(ex.Message, "المزامنة", MessageBoxButton.OK, MessageBoxImage.Warning); }
+            catch (Exception ex) { ReportUiError(ex, "المزامنة"); }
         }
         await _viewModel.RefreshStatusAsync().ConfigureAwait(true);
     }
 
     private void OnCloseTabClick(object sender, RoutedEventArgs e)
     {
+        if (!_isViewReady || _isBusy) return;
         _viewModel.Workspace.CloseSelected(tab =>
             MessageBox.Show($"التبويب '{tab.Title}' يحتوي تغييرات غير محفوظة. إغلاقه؟",
                 "Qodynex", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes);
@@ -145,6 +190,31 @@ public partial class MainShellWindow : Window
             if (answer != MessageBoxResult.Yes) { e.Cancel = true; return; }
         }
         _statusTimer.Stop();
+        _errorBannerTimer.Stop();
+        RuntimeErrorHub.ErrorRaised -= OnRuntimeError;
         _lifetime.Cancel();
     }
+
+    private void OnRuntimeError(object? sender, RuntimeErrorEventArgs e)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(new Action(() => OnRuntimeError(sender, e)));
+            return;
+        }
+
+        RuntimeErrorText.Text = $"{e.Context}: {e.Message}";
+        RuntimeErrorBanner.Visibility = Visibility.Visible;
+        _errorBannerTimer.Stop();
+        _errorBannerTimer.Start();
+    }
+
+    private void OnDismissRuntimeErrorClick(object sender, RoutedEventArgs e)
+    {
+        _errorBannerTimer.Stop();
+        RuntimeErrorBanner.Visibility = Visibility.Collapsed;
+    }
+
+    private static void ReportUiError(Exception exception, string context) =>
+        RuntimeErrorHub.Report(exception, context);
 }

@@ -194,6 +194,73 @@ public sealed class WindowsColdStartTests
         }
         finally { DeleteSqlite(path); }
     }
+    [Fact]
+    public async Task Applied_Migration_Column_Drift_Is_Self_Healed_Without_Data_Loss()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"qodynex-heal-{Guid.NewGuid():N}.db");
+        try
+        {
+            var options = new DbContextOptionsBuilder<LocalAccountingDbContext>()
+                .UseSqlite($"Data Source={path}")
+                .AddInterceptors(new ImmutabilityInterceptor())
+                .Options;
+            await using var db = new LocalAccountingDbContext(options);
+            var bootstrapper = new LocalDatabaseBootstrapper(db);
+            await bootstrapper.InitializeAsync();
+
+            var identity = LocalClientIdentity.Create();
+            await new LocalFirstRunBootstrapper(db).EnsureDemoSeedAsync(identity);
+            var before = await db.Companies.CountAsync();
+
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE LocalSyncStates DROP COLUMN CompanyName;");
+            var healed = await bootstrapper.InitializeAsync();
+
+            Assert.False(healed.RecreatedDatabase);
+            Assert.Contains(healed.Repairs, x => x.Contains("LocalSyncStates.CompanyName", StringComparison.Ordinal));
+            Assert.Equal(before, await db.Companies.CountAsync());
+
+            await using var command = db.Database.GetDbConnection().CreateCommand();
+            await db.Database.OpenConnectionAsync();
+            command.CommandText = "SELECT CompanyName FROM LocalSyncStates LIMIT 1;";
+            _ = await command.ExecuteScalarAsync();
+            await db.Database.CloseConnectionAsync();
+        }
+        finally { DeleteSqlite(path); }
+    }
+
+    [Fact]
+    public async Task Incompatible_Legacy_Database_Is_Backed_Up_And_Recreated_Once()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"qodynex-recovery-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "qodynex-local.db");
+        try
+        {
+            await LegacyDatabaseSmokeFixture.CreateAsync(path);
+            var options = new DbContextOptionsBuilder<LocalAccountingDbContext>()
+                .UseSqlite($"Data Source={path}")
+                .AddInterceptors(new ImmutabilityInterceptor())
+                .Options;
+            await using var db = new LocalAccountingDbContext(options);
+            var bootstrapper = new LocalDatabaseBootstrapper(db);
+            var result = await bootstrapper.InitializeAsync();
+
+            Assert.True(result.RecreatedDatabase);
+            Assert.False(string.IsNullOrWhiteSpace(result.BackupPath));
+            Assert.True(File.Exists(result.BackupPath));
+
+            var identity = LocalClientIdentity.Create();
+            await new LocalFirstRunBootstrapper(db).EnsureDemoSeedAsync(identity);
+            Assert.Single(await db.Companies.ToListAsync());
+            Assert.Equal(5, await db.Items.CountAsync());
+        }
+        finally
+        {
+            DeleteSqlite(path);
+            try { Directory.Delete(directory, recursive: true); } catch (IOException) { }
+        }
+    }
+
     private static void DeleteSqlite(string path)
     {
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();

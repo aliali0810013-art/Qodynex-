@@ -83,6 +83,22 @@ jobs:
           $env:QODYNEX_SQLITE_PATH = Join-Path $env:RUNNER_TEMP "qodynex-published-cold-start.db"
           $process = Start-Process -FilePath (Resolve-Path "dist/Qodynex.exe") -ArgumentList "--cold-start-check" -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "Published Qodynex.exe cold-start failed with exit code $($process.ExitCode)." }
+      - name: Legacy DB upgrade smoke-test with the published EXE
+        shell: pwsh
+        run: |
+          $env:QODYNEX_SQLITE_PATH = Join-Path $env:RUNNER_TEMP "qodynex-published-legacy.db"
+          Remove-Item $env:QODYNEX_SQLITE_PATH -Force -ErrorAction SilentlyContinue
+          $process = Start-Process -FilePath (Resolve-Path "dist/Qodynex.exe") -ArgumentList @("--legacy-db-smoke","--cold-start-check") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Legacy DB recovery smoke test failed with exit code $($process.ExitCode)." }
+          $backups = Get-ChildItem $env:RUNNER_TEMP -Filter "qodynex_legacy_backup_*.db" -ErrorAction SilentlyContinue
+          if (-not $backups) { throw "Legacy DB recovery did not produce the required backup file." }
+      - name: Full WPF UI tour smoke-test with the published EXE
+        shell: pwsh
+        run: |
+          $env:QODYNEX_SQLITE_PATH = Join-Path $env:RUNNER_TEMP "qodynex-published-ui-tour.db"
+          Remove-Item $env:QODYNEX_SQLITE_PATH -Force -ErrorAction SilentlyContinue
+          $process = Start-Process -FilePath (Resolve-Path "dist/Qodynex.exe") -ArgumentList "--ui-tour-check" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Full UI tour failed with exit code $($process.ExitCode)." }
       - name: Upload clean Windows executable
         uses: actions/upload-artifact@v4
         with:

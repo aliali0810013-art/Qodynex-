@@ -18,6 +18,7 @@ public partial class App : System.Windows.Application
 {
     private LocalAccountingDbContext? _db;
     private HttpClient? _httpClient;
+    private static int _isHandlingFatalError;
 
     public App()
     {
@@ -53,13 +54,20 @@ public partial class App : System.Windows.Application
                 : Path.GetFullPath(configuredPath);
             Directory.CreateDirectory(Path.GetDirectoryName(dbPath) ?? root);
 
+            var legacyDbSmoke = e.Args.Any(x => string.Equals(x, "--legacy-db-smoke", StringComparison.OrdinalIgnoreCase));
+            if (legacyDbSmoke && !File.Exists(dbPath))
+                await LegacyDatabaseSmokeFixture.CreateAsync(dbPath).ConfigureAwait(true);
+
             var options = new DbContextOptionsBuilder<LocalAccountingDbContext>()
                 .UseSqlite($"Data Source={dbPath}")
                 .AddInterceptors(new ImmutabilityInterceptor())
                 .Options;
 
             _db = new LocalAccountingDbContext(options);
-            await new LocalDatabaseBootstrapper(_db).InitializeAsync().ConfigureAwait(true);
+            var localBootstrapper = new LocalDatabaseBootstrapper(_db);
+            var upgradeResult = await localBootstrapper.InitializeAsync().ConfigureAwait(true);
+            if (legacyDbSmoke && string.IsNullOrWhiteSpace(upgradeResult.BackupPath))
+                throw new InvalidOperationException("Legacy DB smoke fixture did not exercise automatic backup/recovery.");
             var localSync = new LocalSyncStore(_db);
 
             ISyncTransport? transport = null;
@@ -172,8 +180,15 @@ public partial class App : System.Windows.Application
             var mainWindow = new MainShellWindow(shell, coordinator);
             MainWindow = mainWindow;
 
-            // CI executes the published single-file binary with this switch to
-            // prove migrations, SQLite native extraction, seed and UI composition.
+            // CI executes the published single-file binary with these switches to
+            // prove migration recovery, SQLite native extraction and real WPF composition.
+            if (e.Args.Any(x => string.Equals(x, "--ui-tour-check", StringComparison.OrdinalIgnoreCase)))
+            {
+                await WindowsUiTourVerifier.RunAsync(mainWindow, shell, facade).ConfigureAwait(true);
+                Shutdown(0);
+                return;
+            }
+
             if (e.Args.Any(x => string.Equals(x, "--cold-start-check", StringComparison.OrdinalIgnoreCase)))
             {
                 Shutdown(0);
@@ -252,7 +267,8 @@ public partial class App : System.Windows.Application
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
-        ShowFatal("خطأ غير معالج في واجهة Qodynex", e.Exception);
+        RuntimeErrorHub.Report(e.Exception, "WPF DispatcherUnhandledException");
+        // A UI binding/event exception must not start a recursive MessageBox storm.
         e.Handled = true;
     }
 
@@ -260,17 +276,20 @@ public partial class App : System.Windows.Application
     {
         var exception = e.ExceptionObject as Exception
                         ?? new Exception(e.ExceptionObject?.ToString() ?? "Unknown fatal error.");
-        ShowFatal("خطأ حرج في Qodynex", exception);
+        RuntimeErrorHub.Report(exception, "AppDomain.UnhandledException", notify: false);
     }
 
     private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
-        ShowFatal("خطأ في مهمة خلفية داخل Qodynex", e.Exception);
+        RuntimeErrorHub.Report(e.Exception, "TaskScheduler.UnobservedTaskException");
         e.SetObserved();
     }
 
     private static void ShowFatal(string title, Exception exception)
     {
+        RuntimeErrorHub.Report(exception, title, notify: false);
+        if (Interlocked.Exchange(ref _isHandlingFatalError, 1) != 0) return;
+
         var details = exception.InnerException is null
             ? exception.Message
             : $"{exception.Message}\n\nالسبب: {exception.InnerException.Message}";
