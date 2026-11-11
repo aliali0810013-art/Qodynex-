@@ -188,11 +188,11 @@ public static class InvoicePrintService
     {
         var copy=((IDocumentPaginatorSource)document).DocumentPaginator;
         var viewer=new DocumentViewer{Document=document};
-        var print=new Button{Content="طباعة مباشرة",Margin=new Thickness(4),Padding=new Thickness(16,8)};
+        var print=new Button{Content="طباعة مباشرة",Margin=new Thickness(4),Padding=new Thickness(16,8,16,8)};
         print.Click+=(_,_)=>{var d=new PrintDialog();if(d.ShowDialog()==true)d.PrintDocument(copy,"Qodynex invoice");};
-        var save=new Button{Content="حفظ XPS قابل للطباعة",Margin=new Thickness(4),Padding=new Thickness(16,8)};
+        var save=new Button{Content="حفظ XPS قابل للطباعة",Margin=new Thickness(4),Padding=new Thickness(16,8,16,8)};
         save.Click+=(_,_)=>{var d=new SaveFileDialog{Filter="XPS Document|*.xps",FileName="Qodynex-Invoice.xps"};if(d.ShowDialog()!=true)return;using var xps=new XpsDocument(d.FileName,FileAccess.ReadWrite);XpsDocument.CreateXpsDocumentWriter(xps).Write(copy);};
         var panel=new DockPanel();var bar=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Left};bar.Children.Add(print);bar.Children.Add(save);DockPanel.SetDock(bar,Dock.Top);panel.Children.Add(bar);panel.Children.Add(viewer);
-        new Window{Title=title,Width=1000,Height=800,WindowStartupLocation=WindowStartupLocation.CenterOwner,Content=panel,Owner=Application.Current.MainWindow}.ShowDialog();
+        new Window{Title=title,Width=1000,Height=800,WindowStartupLocation=WindowStartupLocation.CenterOwner,Content=panel,Owner=System.Windows.Application.Current.MainWindow}.ShowDialog();
     }
 }
