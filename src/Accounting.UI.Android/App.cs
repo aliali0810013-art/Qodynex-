@@ -9,6 +9,7 @@ public sealed class App : Microsoft.Maui.Controls.Application
     {
         _settings = settings;
         _runtime = runtime;
+        Resources = MobileTheme.CreateResources();
         _settings.EnsureLocalDemoIdentity();
 
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
@@ -25,7 +26,7 @@ public sealed class App : Microsoft.Maui.Controls.Application
             await _runtime.InitializeAsync().ConfigureAwait(false);
             await MainThread.InvokeOnMainThreadAsync(() =>
             {
-                MainPage = new NavigationPage(new HomePage(_runtime));
+                MainPage = new ProductionMobileShell(_runtime);
                 _runtime.StartSyncLoop();
             });
         }
