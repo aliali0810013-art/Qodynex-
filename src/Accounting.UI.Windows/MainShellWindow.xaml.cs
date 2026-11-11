@@ -78,7 +78,7 @@ public partial class MainShellWindow : Window
         }
     }
 
-    private async void OnQuickPartnerClick(object sender, RoutedEventArgs e)
+    private void OnQuickPartnerClick(object sender, RoutedEventArgs e)
     {
         if (sender is not Button button || button.DataContext is not InvoiceEditorViewModel vm) return;
         var name = new TextBox { Margin = new Thickness(8), MinWidth = 300 };
