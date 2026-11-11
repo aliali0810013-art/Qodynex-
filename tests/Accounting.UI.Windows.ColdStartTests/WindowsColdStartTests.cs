@@ -108,7 +108,7 @@ public sealed class WindowsColdStartTests
 
             var dashboardVm = new DashboardViewModel(facade, OpenTab);
             await dashboardVm.RefreshAsync();
-            Assert.Equal(5, dashboardVm.ItemCount);
+            Assert.Equal(6, dashboardVm.ItemCount);
 
             var vouchersVm = new VouchersWorkspaceViewModel(facade, OpenTab);
             await vouchersVm.RefreshAsync();
