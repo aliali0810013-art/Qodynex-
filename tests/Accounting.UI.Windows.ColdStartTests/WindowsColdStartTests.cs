@@ -151,7 +151,7 @@ public sealed class WindowsColdStartTests
                 currency,inventory,new SystemClock());
             var facade = new WindowsAccountingFacade(db,posting,queries,new LocalTempNumberGenerator(db),user);
 
-            var logo = new byte[] { 1, 2, 3, 4, 5 };
+            var logo = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
             var branding = new CompanyBrandingSnapshot("شركة اختبار","Test Co","تجارة",logo,"صنعاء","شارع حدة","777000000",
                 "test@example.com","TX-1","CR-1","شكراً لزيارتكم","YER","ر.ي",false,0m,false,false);
             await facade.SaveBrandingAsync(branding,"logo.png");
