@@ -12,11 +12,22 @@ public sealed partial class InvoiceEditorViewModel
     private AccountLookup? _selectedSettlementAccount;
     private PartnerLookup? _selectedPartner;
     private string _paymentMethod = "نقدي";
+    private ItemLookup? _selectedSearchItem;
 
     public ObservableCollection<WarehouseLookup> Warehouses { get; } = new();
+    public ObservableCollection<ItemLookup> AvailableItems { get; } = new();
     public ObservableCollection<AccountLookup> SettlementAccounts { get; } = new();
     public ObservableCollection<PartnerLookup> Partners { get; } = new();
     public ObservableCollection<string> PaymentMethods { get; } = new() { "نقدي", "آجل" };
+    public string PartnerLabel => _isSales ? "العميل" : "المورد";
+    public string QuickPartnerButtonLabel => _isSales ? "+ عميل جديد سريع" : "+ مورد جديد سريع";
+    public ItemLookup? SelectedSearchItem { get => _selectedSearchItem; set => Set(ref _selectedSearchItem, value); }
+    public AsyncRelayCommand AddSelectedItemCommand => new(async () =>
+    {
+        if (SelectedSearchItem is null) { Status = "اختر صنفاً من قائمة البحث."; return; }
+        await AddItemAsync(SelectedSearchItem).ConfigureAwait(true);
+        SelectedSearchItem = null; Raise(nameof(SelectedSearchItem));
+    });
 
     public WarehouseLookup? SelectedWarehouse
     {
@@ -58,13 +69,28 @@ public sealed partial class InvoiceEditorViewModel
         {
             var warehousesTask = _facade.GetWarehousesAsync();
             var accountsTask = _facade.SearchAccountsAsync(string.Empty);
-            var partnersTask = _facade.SearchPartnersAsync(string.Empty);
-            await Task.WhenAll(warehousesTask, accountsTask, partnersTask).ConfigureAwait(true);
+            var cashTask = _facade.GetCashBankAccountsAsync();
+            var partnersTask = _facade.SearchPartnersByTypeAsync(_isSales ? PartnerType.Customer : PartnerType.Supplier);
+            var itemsTask = _facade.SearchItemsAsync(string.Empty);
+            await Task.WhenAll(warehousesTask, accountsTask, cashTask, partnersTask, itemsTask).ConfigureAwait(true);
             Warehouses.Clear(); foreach (var row in warehousesTask.Result) Warehouses.Add(row);
-            SettlementAccounts.Clear(); foreach (var row in accountsTask.Result) SettlementAccounts.Add(row);
             Partners.Clear(); foreach (var row in partnersTask.Result) Partners.Add(row);
+            AvailableItems.Clear(); foreach (var row in itemsTask.Result) AvailableItems.Add(row);
+            SettlementAccounts.Clear();
+            if (_isSales)
+            {
+                foreach (var row in cashTask.Result) SettlementAccounts.Add(row);
+                var receivableIds = Partners.Select(x => x.ControlAccountId).ToHashSet();
+                foreach (var row in accountsTask.Result.Where(x => receivableIds.Contains(x.Id))) SettlementAccounts.Add(row);
+            }
+            else
+            {
+                foreach (var row in cashTask.Result) SettlementAccounts.Add(row);
+                var payableIds = Partners.Select(x => x.ControlAccountId).ToHashSet();
+                foreach (var row in accountsTask.Result.Where(x => payableIds.Contains(x.Id))) SettlementAccounts.Add(row);
+            }
             SelectedWarehouse = Warehouses.FirstOrDefault();
-            SelectedSettlementAccount = SettlementAccounts.FirstOrDefault(x => x.Code.StartsWith(_isSales ? "111" : "211", StringComparison.Ordinal))
+            SelectedSettlementAccount = SettlementAccounts.FirstOrDefault(x => x.Code.StartsWith("111", StringComparison.Ordinal) || x.Code.StartsWith("112", StringComparison.Ordinal))
                                         ?? SettlementAccounts.FirstOrDefault();
         }
         catch (Exception ex) { Status = ex.Message; }
