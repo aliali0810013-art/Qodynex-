@@ -107,6 +107,9 @@ public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspac
     private decimal _tax;
     private decimal _grandTotal;
     private CompanyPolicy? _policy;
+    private bool _isPosted;
+    private string _documentNumber = "مسودة";
+    private DateTimeOffset _documentDate = DateTimeOffset.Now;
 
     public InvoiceEditorViewModel(WindowsAccountingFacade facade, Action<string, string, object> openTab, bool isSales, string moduleKey)
     {
@@ -123,6 +126,7 @@ public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspac
         RemoveLineCommand = new RelayCommand(RemoveSelectedLine, () => SelectedLine is not null);
         PrintThermalCommand = new AsyncRelayCommand(() => PrintAsync(true));
         PrintA4Command = new AsyncRelayCommand(() => PrintAsync(false));
+        NewDocumentCommand = new RelayCommand(NewDocument);
         _ = LoadPolicyAsync();
         _ = InitializeProductionInvoiceAsync();
     }
@@ -140,6 +144,10 @@ public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspac
     public decimal Tax { get => _tax; private set => Set(ref _tax, value); }
     public decimal GrandTotal { get => _grandTotal; private set => Set(ref _grandTotal, value); }
     public string Status { get => _status; private set => Set(ref _status, value); }
+    public bool IsPosted { get => _isPosted; private set { if(Set(ref _isPosted,value)) Raise(nameof(IsEditable)); } }
+    public bool IsEditable => !IsPosted;
+    public string DocumentNumber { get => _documentNumber; private set => Set(ref _documentNumber,value); }
+    public DateTimeOffset DocumentDate { get => _documentDate; private set => Set(ref _documentDate,value); }
 
     public string BarcodeInput
     {
@@ -160,9 +168,11 @@ public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspac
     public RelayCommand RemoveLineCommand { get; }
     public AsyncRelayCommand PrintThermalCommand { get; }
     public AsyncRelayCommand PrintA4Command { get; }
+    public RelayCommand NewDocumentCommand { get; }
 
     public async Task SaveAndPostAsync()
     {
+        if (IsPosted) { Status = "هذه الفاتورة مرحّلة. اضغط «فاتورة جديدة» لبدء مستند آخر."; return; }
         var settlement = SelectedSettlementAccount?.Id
             ?? (Guid.TryParse(SettlementAccountIdText, out var parsedSettlement) ? parsedSettlement : Guid.Empty);
         if (settlement == Guid.Empty)
@@ -193,9 +203,11 @@ public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspac
                 result = await _facade.PostSalesAsync(warehouse, settlement, partner, ModuleKey, ModuleMetadataJson, draft).ConfigureAwait(true);
             else
                 result = await _facade.PostPurchaseAsync(warehouse, settlement, partner, ModuleKey, draft).ConfigureAwait(true);
-            Status = $"تم الترحيل محلياً. Operation: {result.OperationId:N}. بانتظار الرقم الرسمي من الخادم.";
-            Lines.Clear();
-            Recalculate();
+            var printInfo = await _facade.GetDocumentPrintInfoAsync(_isSales, result.DocumentId).ConfigureAwait(true);
+            DocumentNumber = printInfo.OfficialNumber == "-" ? printInfo.LocalNumber : printInfo.OfficialNumber;
+            DocumentDate = printInfo.DateUtc;
+            IsPosted = true;
+            Status = $"تم الترحيل محلياً. رقم المستند: {DocumentNumber}. يمكن الطباعة الآن؛ الرقم الرسمي النهائي يتحدث بعد المزامنة.";
         }
         catch (Exception ex)
         {
@@ -360,6 +372,14 @@ public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspac
                 thermal ? "معاينة فاتورة 80mm" : "معاينة فاتورة A4");
         }
         catch (Exception ex) { Status = ex.Message; }
+    }
+
+    private void NewDocument()
+    {
+        foreach (var line in Lines) line.PropertyChanged -= OnLineChanged;
+        Lines.Clear(); SelectedLine=null; SelectedPartner=null; PaymentMethod="نقدي";
+        DocumentNumber="مسودة"; DocumentDate=DateTimeOffset.Now; IsPosted=false;
+        Status="فاتورة جديدة جاهزة للإدخال."; Recalculate();
     }
 
     private void RemoveSelectedLine()
