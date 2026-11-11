@@ -413,6 +413,7 @@ public sealed partial class ShellViewModel
     public RelayCommand OpenInventoryWorkspaceCommand { get; private set; } = null!;
     public RelayCommand OpenAccountsWorkspaceCommand { get; private set; } = null!;
     public RelayCommand OpenReportsSyncCommand { get; private set; } = null!;
+    public RelayCommand OpenSettingsCommand { get; private set; } = null!;
 
     private void InitializeProductionNavigation(WindowsAccountingFacade facade, LocalSyncStore syncStore, UserContext user, IReadOnlyList<string> enabledModules)
     {
@@ -423,6 +424,7 @@ public sealed partial class ShellViewModel
         OpenInventoryWorkspaceCommand=new RelayCommand(()=>OpenTab("inventory","المخزون والأصناف",new InventoryWorkspaceViewModel(facade,OpenTab)));
         OpenAccountsWorkspaceCommand=new RelayCommand(()=>OpenTab("accounts","الحسابات ودفتر الأستاذ",new AccountsWorkspaceViewModel(facade)));
         OpenReportsSyncCommand=new RelayCommand(()=>OpenTab("reports-sync","التقارير والمزامنة",new ReportsSyncViewModel(facade,syncStore,user)));
+        OpenSettingsCommand=new RelayCommand(()=>OpenTab("settings","الإعدادات والكليشة",new CompanySettingsViewModel(facade)));
         OpenTab("dashboard","لوحة القيادة",new DashboardViewModel(facade,OpenTab));
     }
 
