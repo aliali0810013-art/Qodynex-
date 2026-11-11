@@ -114,9 +114,8 @@ public sealed class GlobalKeyboardShortcutHandler
 
     public Task HandleAsync(Key key) => key switch
     {
-        Key.F2 => Active?.SaveAndPostAsync() ?? Task.CompletedTask,
         Key.F3 => Active?.QuickSearchAsync() ?? Task.CompletedTask,
-        Key.F5 => Active?.RefreshAsync() ?? Task.CompletedTask,
+        Key.F5 => Active?.SaveAndPostAsync() ?? Task.CompletedTask,
         Key.F7 => Active?.OpenSelectedDetailsAsync() ?? Task.CompletedTask,
         _ => Task.CompletedTask
     };
