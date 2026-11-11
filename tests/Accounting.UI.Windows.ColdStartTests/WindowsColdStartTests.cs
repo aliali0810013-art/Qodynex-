@@ -126,7 +126,7 @@ public sealed class WindowsColdStartTests
             var inventoryVm = new InventoryWorkspaceViewModel(facade, OpenTab);
             await Task.Delay(100);
             await inventoryVm.RefreshAsync();
-            Assert.Equal(5, inventoryVm.Rows.Count);
+            Assert.Equal(6, inventoryVm.Rows.Count);
 
             var salesVm = new InvoiceEditorViewModel(facade, OpenTab, true, RetailModule.ModuleKey);
             var purchaseVm = new InvoiceEditorViewModel(facade, OpenTab, false, RetailModule.ModuleKey);
