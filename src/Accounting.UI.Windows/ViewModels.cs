@@ -15,10 +15,22 @@ public sealed class InvoiceLineViewModel : ObservableObject
     private decimal _quantity = 1m;
     private decimal _baseUnitsPerUnit = 1m;
     private decimal _unitPrice;
+    private decimal _discount;
+    private ItemLookup? _selectedItem;
 
-    public Guid ItemId { get; init; }
-    public string Sku { get; init; } = string.Empty;
-    public string Name { get; init; } = string.Empty;
+    public Guid ItemId { get; private set; }
+    public string Sku { get; private set; } = string.Empty;
+    public string Name { get; private set; } = string.Empty;
+    public ItemLookup? SelectedItem
+    {
+        get => _selectedItem;
+        set
+        {
+            if (!Set(ref _selectedItem, value) || value is null) return;
+            ItemId = value.Id; Sku = value.Sku; Name = value.Name;
+            Raise(nameof(ItemId)); Raise(nameof(Sku)); Raise(nameof(Name));
+        }
+    }
     public ObservableCollection<ItemUnitOption> UnitOptions { get; } = new();
 
     public Guid UnitOfMeasureId
@@ -68,7 +80,18 @@ public sealed class InvoiceLineViewModel : ObservableObject
         }
     }
 
-    public decimal LineTotal => Quantity * UnitPrice;
+    public decimal Discount
+    {
+        get => _discount;
+        set
+        {
+            if (value < 0m) return;
+            if (Set(ref _discount, value)) Raise(nameof(LineTotal));
+        }
+    }
+
+    public decimal LineTotal => Math.Max(0m, Quantity * UnitPrice - Discount);
+    public decimal NetUnitPrice => Quantity <= 0m ? 0m : LineTotal / Quantity;
 }
 
 public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionTarget
@@ -158,7 +181,7 @@ public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspac
             return;
         }
 
-        var draft = Lines.Select(x => new InvoiceDraftLine(x.ItemId, x.UnitOfMeasureId, x.Quantity, x.BaseUnitsPerUnit, x.UnitPrice)).ToArray();
+        var draft = Lines.Select(x => new InvoiceDraftLine(x.ItemId, x.UnitOfMeasureId, x.Quantity, x.BaseUnitsPerUnit, x.NetUnitPrice)).ToArray();
         try
         {
             PostingResult result;
@@ -234,9 +257,7 @@ public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspac
                 {
                     var line = new InvoiceLineViewModel
                     {
-                        ItemId = item.Id,
-                        Sku = item.Sku,
-                        Name = item.Name,
+                        SelectedItem = item,
                         Quantity = 1m,
                         UnitPrice = suggestedPrice
                     };
@@ -257,6 +278,30 @@ public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspac
         {
             Status = ex.Message;
         }
+    }
+
+    public async Task AddItemAsync(ItemLookup item)
+    {
+        var unitOptions = await _facade.GetItemUnitsAsync(item.Id).ConfigureAwait(true);
+        if (unitOptions.Count == 0) throw new InvalidOperationException("لا توجد وحدة قياس للصنف.");
+        var defaultUnit = unitOptions[0];
+        var suggestedPrice = await _facade.GetSuggestedUnitPriceAsync(ModuleKey, item.Id, defaultUnit.BaseUnitsPerUnit, 0m).ConfigureAwait(true);
+        var line = new InvoiceLineViewModel { SelectedItem = item, Quantity = 1m, UnitPrice = suggestedPrice };
+        foreach (var option in unitOptions) line.UnitOptions.Add(option);
+        line.SelectedUnit = defaultUnit;
+        line.PropertyChanged += OnLineChanged;
+        Lines.Add(line); SelectedLine = line; Recalculate();
+    }
+
+    public async Task ChangeLineItemAsync(InvoiceLineViewModel line, ItemLookup item)
+    {
+        line.SelectedItem = item;
+        line.UnitOptions.Clear();
+        foreach (var option in await _facade.GetItemUnitsAsync(item.Id).ConfigureAwait(true)) line.UnitOptions.Add(option);
+        line.SelectedUnit = line.UnitOptions.FirstOrDefault();
+        if (line.SelectedUnit is not null)
+            line.UnitPrice = await _facade.GetSuggestedUnitPriceAsync(ModuleKey, item.Id, line.SelectedUnit.BaseUnitsPerUnit, line.UnitPrice).ConfigureAwait(true);
+        Recalculate();
     }
 
     private void OnLineChanged(object? sender, PropertyChangedEventArgs e) => Recalculate();
