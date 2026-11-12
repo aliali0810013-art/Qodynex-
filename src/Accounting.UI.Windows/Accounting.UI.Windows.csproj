@@ -15,6 +15,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="ZXing.Net" />
+    <PackageReference Include="Microsoft.Web.WebView2" />
   </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
