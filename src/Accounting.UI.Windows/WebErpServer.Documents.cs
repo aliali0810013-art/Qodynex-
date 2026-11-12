@@ -282,7 +282,7 @@ public sealed partial class WebErpServer
 
     private async Task<object?> ReverseJournalAsync(Guid id, CancellationToken ct)
     {
-        var headers = await _facade.GetRecentJournalsAsync(ct).ConfigureAwait(false);
+        var headers = await _facade.GetRecentJournalsAsync(250, ct).ConfigureAwait(false);
         var j = headers.FirstOrDefault(x => x.Id == id) ?? throw new InvalidOperationException("القيد غير موجود.");
         if (!j.SourceType.Equals("ManualJournal", StringComparison.OrdinalIgnoreCase) && j.SourceDocumentId != Guid.Empty)
             return await ReverseDocumentAsync(j.SourceDocumentId, ct).ConfigureAwait(false);
