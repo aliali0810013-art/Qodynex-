@@ -18,6 +18,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ZXing;
 using ZXing.Common;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace Accounting.UI.Windows;
 
@@ -227,9 +229,18 @@ public sealed partial class WebErpServer : IAsyncDisposable
 
     private static string QrDataUri(string text)
     {
-        var writer = new BarcodeWriterSvg { Format = BarcodeFormat.QR_CODE, Options = new EncodingOptions { Height = 220, Width = 220, Margin = 1 } };
-        var svg = writer.Write(text).Content;
-        return "data:image/svg+xml;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(svg));
+        var writer = new BarcodeWriterPixelData
+        {
+            Format = BarcodeFormat.QR_CODE,
+            Options = new EncodingOptions { Height = 220, Width = 220, Margin = 1, PureBarcode = true }
+        };
+        var pixels = writer.Write(text);
+        var bitmap = BitmapSource.Create(pixels.Width, pixels.Height, 96, 96, PixelFormats.Bgra32, null, pixels.Pixels, pixels.Width * 4);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+        return "data:image/png;base64," + Convert.ToBase64String(stream.ToArray());
     }
 
     private static string? TicksToIso(object? value)
