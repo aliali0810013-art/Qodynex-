@@ -111,7 +111,7 @@ public sealed class LocalDatabaseMaintenanceService
         var validation = await ValidateSqliteFileAsync(destinationPath, requireAccountingSchema: true, ct).ConfigureAwait(false);
         if (!validation.IsHealthy)
         {
-            try { File.Delete(destinationPath); } catch { }
+            try { File.Delete(destinationPath); } catch (Exception ignoredError) { System.Diagnostics.Debug.WriteLine(ignoredError); }
             throw new InvalidOperationException($"فشل التحقق من النسخة الاحتياطية: {validation.Summary}");
         }
 
@@ -140,7 +140,7 @@ public sealed class LocalDatabaseMaintenanceService
         var copied = await ValidateSqliteFileAsync(temp, requireAccountingSchema: true, ct).ConfigureAwait(false);
         if (!copied.IsHealthy)
         {
-            try { File.Delete(temp); } catch { }
+            try { File.Delete(temp); } catch (Exception ignoredError) { System.Diagnostics.Debug.WriteLine(ignoredError); }
             throw new InvalidOperationException($"فشل التحقق من ملف الاستعادة المؤقت: {copied.Summary}");
         }
 
@@ -344,6 +344,6 @@ public sealed class LocalDatabaseMaintenanceService
 
     private static void DeleteIfExists(string path)
     {
-        try { if (File.Exists(path)) File.Delete(path); } catch (IOException) { }
+        try { if (File.Exists(path)) File.Delete(path); } catch (IOException ioError) { System.Diagnostics.Debug.WriteLine(ioError); }
     }
 }
