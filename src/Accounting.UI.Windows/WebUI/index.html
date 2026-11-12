@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Qodynex ERP</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+<div id="app" class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">Q</div>
+      <div><strong id="brandName">كودينكس</strong><small>Qodynex ERP</small></div>
+    </div>
+    <nav id="nav"></nav>
+    <div class="sidebar-foot"><span class="dot ok"></span><span>SQLite محلي</span><small id="dbState">متصل</small></div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button class="icon-only mobile-menu" id="menuBtn" aria-label="القائمة"></button>
+      <div class="global-search"><span id="searchIcon"></span><input id="globalSearch" autocomplete="off" placeholder="بحث سريع F3 — صنف، فاتورة، عميل، حساب..."/><div id="globalSuggestions" class="suggestions"></div></div>
+      <div class="top-actions">
+        <button id="newBtn" data-icon="plus" title="جديد F2">جديد <kbd>F2</kbd></button>
+        <button id="syncBtn" class="ghost" data-icon="sync" title="مزامنة F9">مزامنة</button>
+        <button id="themeBtn" class="icon-only ghost" data-icon="moon" title="الوضع الليلي"></button>
+        <div class="company-chip"><span id="companyAvatar">ق</span><div><strong id="companyTop">كودينكس</strong><small id="branchTop">الفرع الرئيسي</small></div></div>
+      </div>
+    </header>
+    <section id="view" class="view"></section>
+  </main>
+</div>
+<div id="modalRoot"></div>
+<div id="toastRoot" class="toast-root"></div>
+<div id="loading" class="loading hidden"><div class="spinner"></div><span>جارٍ التنفيذ...</span></div>
+<script src="app.js"></script>
+</body>
+</html>
