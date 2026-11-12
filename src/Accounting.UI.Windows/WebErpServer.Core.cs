@@ -32,6 +32,10 @@ public sealed partial class WebErpServer : IAsyncDisposable
     private readonly UserContext _user;
     private readonly string _dbPath;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
+    // Local Web ERP currently shares a single EF Core DbContext with the WPF composition root.
+    // ASP.NET Core may dispatch multiple fetches from the dashboard/navigation concurrently,
+    // so serialize API requests to prevent overlapping operations on that DbContext.
+    private readonly SemaphoreSlim _requestGate = new(1, 1);
     private WebApplication? _app;
 
     public WebErpServer(LocalAccountingDbContext db, WindowsAccountingFacade facade, UserContext user, string dbPath)
@@ -60,6 +64,19 @@ public sealed partial class WebErpServer : IAsyncDisposable
         builder.WebHost.UseUrls(BaseUrl);
         builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
         var app = builder.Build();
+
+        app.Use(async (ctx, next) =>
+        {
+            if (!ctx.Request.Path.StartsWithSegments("/api"))
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            await _requestGate.WaitAsync(ctx.RequestAborted).ConfigureAwait(false);
+            try { await next().ConfigureAwait(false); }
+            finally { _requestGate.Release(); }
+        });
 
         app.Use(async (ctx, next) =>
         {
@@ -367,5 +384,6 @@ public sealed partial class WebErpServer : IAsyncDisposable
             _app = null;
         }
         _writeGate.Dispose();
+        _requestGate.Dispose();
     }
 }
