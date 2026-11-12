@@ -154,11 +154,37 @@ public static class WebErpScenarioVerifier
 
         foreach (var route in new[] { "dashboard", "items", "partners", "sales", "purchases", "vouchers", "accounts", "reports", "settings" })
         {
-            await window.Browser.ExecuteScriptAsync($"navigate('{route}')").ConfigureAwait(true);
-            await Task.Delay(150, ct).ConfigureAwait(true);
-            var hasView = await window.Browser.ExecuteScriptAsync("document.querySelector('#view')?.textContent?.length > 20").ConfigureAwait(true);
-            if (!string.Equals(hasView, "true", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException($"Web UI route '{route}' did not render content.");
+            await window.Browser.ExecuteScriptAsync(
+                $"window.__qodynexTourDone=''; navigate('{route}').then(()=>window.__qodynexTourDone='{route}').catch(e=>window.__qodynexTourDone='ERROR:'+String(e?.message||e)); 'started';")
+                .ConfigureAwait(true);
+
+            var rendered = false;
+            var snapshot = "{}";
+            for (var attempt = 0; attempt < 40; attempt++)
+            {
+                await Task.Delay(200, ct).ConfigureAwait(true);
+                var raw = await window.Browser.ExecuteScriptAsync(
+                    $"JSON.stringify({{done:window.__qodynexTourDone||'',route:state.route,text:(document.querySelector('#view')?.textContent||'').trim(),pageHead:!!document.querySelector('#view .page-head'),active:!!document.querySelector('[data-route=\"{route}\"].active')}})")
+                    .ConfigureAwait(true);
+                snapshot = JsonSerializer.Deserialize<string>(raw) ?? "{}";
+                using var routeDoc = JsonDocument.Parse(snapshot);
+                var rr = routeDoc.RootElement;
+                var done = rr.GetProperty("done").GetString() ?? "";
+                if (done.StartsWith("ERROR:", StringComparison.Ordinal))
+                    throw new InvalidOperationException($"Web UI route '{route}' navigation failed. {snapshot}");
+                if (string.Equals(done, route, StringComparison.Ordinal)
+                    && string.Equals(rr.GetProperty("route").GetString(), route, StringComparison.Ordinal)
+                    && rr.GetProperty("active").GetBoolean()
+                    && rr.GetProperty("pageHead").GetBoolean()
+                    && (rr.GetProperty("text").GetString()?.Length ?? 0) > 20)
+                {
+                    rendered = true;
+                    break;
+                }
+            }
+
+            if (!rendered)
+                throw new InvalidOperationException($"Web UI route '{route}' did not finish rendering. {snapshot}");
         }
         window.Close();
     }
