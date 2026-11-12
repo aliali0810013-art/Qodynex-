@@ -253,6 +253,19 @@ public sealed partial class WebErpServer : IAsyncDisposable
 
     private static string Dec(decimal value) => value.ToString(CultureInfo.InvariantCulture);
 
+    // EF Core's SQLite provider persists Guid values as upper-case TEXT. The embedded
+    // Web ERP also writes through raw Microsoft.Data.Sqlite commands, so normalize every
+    // Guid-shaped parameter to the provider representation. Without this, raw lower-case
+    // Guid strings can be inserted successfully but later fail joins/queries against
+    // EF-created rows (for example item-unit barcode scans).
+    private static object SqlValue(object? value) => value switch
+    {
+        null => DBNull.Value,
+        Guid guid => guid.ToString("D").ToUpperInvariant(),
+        string text when Guid.TryParseExact(text, "D", out var guid) => guid.ToString("D").ToUpperInvariant(),
+        _ => value
+    };
+
     private async Task<SqliteConnection> OpenAsync(CancellationToken ct)
     {
         var con = new SqliteConnection(_db.Database.GetConnectionString());
@@ -266,14 +279,14 @@ public sealed partial class WebErpServer : IAsyncDisposable
     private static async Task<int> ExecuteAsync(SqliteConnection con, string sql, CancellationToken ct, params (string Name, object? Value)[] args)
     {
         await using var cmd = con.CreateCommand(); cmd.CommandText = sql;
-        foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, SqlValue(value));
         return await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task<long> ScalarLongAsync(SqliteConnection con, string sql, CancellationToken ct, params (string Name, object? Value)[] args)
     {
         await using var cmd = con.CreateCommand(); cmd.CommandText = sql;
-        foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, SqlValue(value));
         var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
         return result is null or DBNull ? 0L : Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
@@ -281,7 +294,7 @@ public sealed partial class WebErpServer : IAsyncDisposable
     private static async Task<string?> ScalarStringAsync(SqliteConnection con, string sql, CancellationToken ct, params (string Name, object? Value)[] args)
     {
         await using var cmd = con.CreateCommand(); cmd.CommandText = sql;
-        foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, SqlValue(value));
         var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
         return result is null or DBNull ? null : Convert.ToString(result, CultureInfo.InvariantCulture);
     }
@@ -289,7 +302,7 @@ public sealed partial class WebErpServer : IAsyncDisposable
     private static async Task<List<Dictionary<string, object?>>> QueryAsync(SqliteConnection con, string sql, CancellationToken ct, params (string Name, object? Value)[] args)
     {
         await using var cmd = con.CreateCommand(); cmd.CommandText = sql;
-        foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        foreach (var (name, value) in args) cmd.Parameters.AddWithValue(name, SqlValue(value));
         var rows = new List<Dictionary<string, object?>>();
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
