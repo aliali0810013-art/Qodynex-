@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>Qodynex</AssemblyName>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <UseAppHost>true</UseAppHost>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ZXing.Net" />
+    <PackageReference Include="Microsoft.Web.WebView2" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Accounting.Application/Accounting.Application.csproj" />
+    <ProjectReference Include="../Accounting.Domain/Accounting.Domain.csproj" />
+    <ProjectReference Include="../Accounting.Infrastructure.Local/Accounting.Infrastructure.Local.csproj" />
+    <ProjectReference Include="../Accounting.Modules/Accounting.Modules.csproj" />
+    <ProjectReference Include="../Accounting.Sync.Client/Accounting.Sync.Client.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="WebUI\**\*" />
+  </ItemGroup>
+</Project>

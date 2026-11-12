@@ -1,0 +1,737 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Net.NetworkInformation;
+using Accounting.Application;
+using Accounting.Domain;
+using Accounting.Modules;
+using Accounting.Sync.Client;
+
+namespace Accounting.UI.Windows;
+
+public sealed class InvoiceLineViewModel : ObservableObject
+{
+    private Guid _unitOfMeasureId;
+    private ItemUnitOption? _selectedUnit;
+    private decimal _quantity = 1m;
+    private decimal _baseUnitsPerUnit = 1m;
+    private decimal _unitPrice;
+    private decimal _discount;
+    private ItemLookup? _selectedItem;
+
+    public Guid ItemId { get; private set; }
+    public string Sku { get; private set; } = string.Empty;
+    public string Name { get; private set; } = string.Empty;
+    public ItemLookup? SelectedItem
+    {
+        get => _selectedItem;
+        set
+        {
+            if (!Set(ref _selectedItem, value) || value is null) return;
+            ItemId = value.Id; Sku = value.Sku; Name = value.Name;
+            Raise(nameof(ItemId)); Raise(nameof(Sku)); Raise(nameof(Name));
+        }
+    }
+    public ObservableCollection<ItemUnitOption> UnitOptions { get; } = new();
+
+    public Guid UnitOfMeasureId
+    {
+        get => _unitOfMeasureId;
+        private set => Set(ref _unitOfMeasureId, value);
+    }
+
+    public ItemUnitOption? SelectedUnit
+    {
+        get => _selectedUnit;
+        set
+        {
+            if (!Set(ref _selectedUnit, value) || value is null) return;
+            UnitOfMeasureId = value.UnitOfMeasureId;
+            BaseUnitsPerUnit = value.BaseUnitsPerUnit;
+        }
+    }
+
+    public decimal Quantity
+    {
+        get => _quantity;
+        set
+        {
+            if (value <= 0m) return;
+            if (Set(ref _quantity, value)) Raise(nameof(LineTotal));
+        }
+    }
+
+    public decimal BaseUnitsPerUnit
+    {
+        get => _baseUnitsPerUnit;
+        private set
+        {
+            if (value <= 0m) return;
+            Set(ref _baseUnitsPerUnit, value);
+        }
+    }
+
+    public decimal UnitPrice
+    {
+        get => _unitPrice;
+        set
+        {
+            if (value < 0m) return;
+            if (Set(ref _unitPrice, value)) Raise(nameof(LineTotal));
+        }
+    }
+
+    public decimal Discount
+    {
+        get => _discount;
+        set
+        {
+            if (value < 0m) return;
+            if (Set(ref _discount, value)) Raise(nameof(LineTotal));
+        }
+    }
+
+    public decimal LineTotal => Math.Max(0m, Quantity * UnitPrice - Discount);
+    public decimal NetUnitPrice => Quantity <= 0m ? 0m : LineTotal / Quantity;
+}
+
+public sealed partial class InvoiceEditorViewModel : ObservableObject, IWorkspaceActionTarget
+{
+    private readonly WindowsAccountingFacade _facade;
+    private readonly Action<string, string, object> _openTab;
+    private readonly bool _isSales;
+    private CancellationTokenSource? _barcodeDelay;
+    private string _barcodeInput = string.Empty;
+    private string _status = string.Empty;
+    private InvoiceLineViewModel? _selectedLine;
+    private decimal _subtotal;
+    private decimal _tax;
+    private decimal _grandTotal;
+    private CompanyPolicy? _policy;
+    private bool _isPosted;
+    private string _documentNumber = "مسودة";
+    private DateTimeOffset _documentDate = DateTimeOffset.Now;
+
+    public InvoiceEditorViewModel(WindowsAccountingFacade facade, Action<string, string, object> openTab, bool isSales, string moduleKey)
+    {
+        _facade = facade;
+        _openTab = openTab;
+        _isSales = isSales;
+        ModuleKey = moduleKey;
+        if (string.Equals(moduleKey, RestaurantModule.ModuleKey, StringComparison.OrdinalIgnoreCase))
+            ModuleMetadataJson = "{\"serviceType\":1,\"tableOrDeliveryReference\":null}";
+        SaveCommand = new AsyncRelayCommand(SaveAndPostAsync);
+        SearchCommand = new AsyncRelayCommand(QuickSearchAsync);
+        RefreshCommand = new AsyncRelayCommand(RefreshAsync);
+        DetailsCommand = new AsyncRelayCommand(OpenSelectedDetailsAsync);
+        RemoveLineCommand = new RelayCommand(RemoveSelectedLine, () => SelectedLine is not null);
+        PrintThermalCommand = new AsyncRelayCommand(() => PrintAsync(true));
+        PrintA4Command = new AsyncRelayCommand(() => PrintAsync(false));
+        NewDocumentCommand = new RelayCommand(NewDocument);
+        _ = LoadPolicyAsync();
+        _ = InitializeProductionInvoiceAsync();
+    }
+
+    public string Title => _isSales ? "فاتورة مبيعات" : "فاتورة مشتريات";
+    public string ModuleKey { get; set; }
+    public bool RequiresWarehouse => !string.Equals(ModuleKey, ServicesModule.ModuleKey, StringComparison.OrdinalIgnoreCase);
+    public string ModuleMetadataJson { get; set; } = "{}";
+    public string WarehouseIdText { get; set; } = string.Empty;
+    public string SettlementAccountIdText { get; set; } = string.Empty;
+    public string PartnerIdText { get; set; } = string.Empty;
+    public ObservableCollection<InvoiceLineViewModel> Lines { get; } = new();
+    public InvoiceLineViewModel? SelectedLine { get => _selectedLine; set { Set(ref _selectedLine, value); RemoveLineCommand.Refresh(); } }
+    public decimal Subtotal { get => _subtotal; private set => Set(ref _subtotal, value); }
+    public decimal Tax { get => _tax; private set => Set(ref _tax, value); }
+    public decimal GrandTotal { get => _grandTotal; private set => Set(ref _grandTotal, value); }
+    public string Status { get => _status; private set => Set(ref _status, value); }
+    public bool IsPosted { get => _isPosted; private set { if(Set(ref _isPosted,value)) Raise(nameof(IsEditable)); } }
+    public bool IsEditable => !IsPosted;
+    public string DocumentNumber { get => _documentNumber; private set => Set(ref _documentNumber,value); }
+    public DateTimeOffset DocumentDate { get => _documentDate; private set => Set(ref _documentDate,value); }
+
+    public string BarcodeInput
+    {
+        get => _barcodeInput;
+        set
+        {
+            if (!Set(ref _barcodeInput, value)) return;
+            _barcodeDelay?.Cancel();
+            _barcodeDelay = new CancellationTokenSource();
+            _ = DebounceBarcodeAsync(value, _barcodeDelay.Token);
+        }
+    }
+
+    public AsyncRelayCommand SaveCommand { get; }
+    public AsyncRelayCommand SearchCommand { get; }
+    public AsyncRelayCommand RefreshCommand { get; }
+    public AsyncRelayCommand DetailsCommand { get; }
+    public RelayCommand RemoveLineCommand { get; }
+    public AsyncRelayCommand PrintThermalCommand { get; }
+    public AsyncRelayCommand PrintA4Command { get; }
+    public RelayCommand NewDocumentCommand { get; }
+
+    public async Task SaveAndPostAsync()
+    {
+        if (IsPosted) { Status = "هذه الفاتورة مرحّلة. اضغط «فاتورة جديدة» لبدء مستند آخر."; return; }
+        var settlement = SelectedSettlementAccount?.Id
+            ?? (Guid.TryParse(SettlementAccountIdText, out var parsedSettlement) ? parsedSettlement : Guid.Empty);
+        if (settlement == Guid.Empty)
+        {
+            Status = "حدد حساب التسوية قبل الترحيل.";
+            return;
+        }
+        var warehouse = SelectedWarehouse?.Id
+            ?? (Guid.TryParse(WarehouseIdText, out var parsedWarehouse) ? parsedWarehouse : Guid.Empty);
+        var partner = SelectedPartner?.Id
+            ?? (Guid.TryParse(PartnerIdText, out var parsedPartner) ? parsedPartner : (Guid?)null);
+        if (_isSales && string.Equals(PaymentMethod, "آجل", StringComparison.Ordinal) && partner is null)
+        {
+            Status = "البيع الآجل يتطلب تحديد العميل.";
+            return;
+        }
+        if (Lines.Count == 0 || Lines.Any(x => x.Quantity <= 0m || x.BaseUnitsPerUnit <= 0m || x.UnitPrice <= 0m))
+        {
+            Status = "أضف سطراً واحداً على الأقل وتأكد أن الكمية والسعر أكبر من صفر.";
+            return;
+        }
+
+        var draft = Lines.Select(x => new InvoiceDraftLine(x.ItemId, x.UnitOfMeasureId, x.Quantity, x.BaseUnitsPerUnit, x.NetUnitPrice)).ToArray();
+        try
+        {
+            PostingResult result;
+            if (_isSales)
+                result = await _facade.PostSalesAsync(warehouse, settlement, partner, ModuleKey, ModuleMetadataJson, draft).ConfigureAwait(true);
+            else
+                result = await _facade.PostPurchaseAsync(warehouse, settlement, partner, ModuleKey, draft).ConfigureAwait(true);
+            var printInfo = await _facade.GetDocumentPrintInfoAsync(_isSales, result.DocumentId).ConfigureAwait(true);
+            DocumentNumber = printInfo.OfficialNumber == "-" ? printInfo.LocalNumber : printInfo.OfficialNumber;
+            DocumentDate = printInfo.DateUtc;
+            IsPosted = true;
+            Status = $"تم الترحيل محلياً. رقم المستند: {DocumentNumber}. يمكن الطباعة الآن؛ الرقم الرسمي النهائي يتحدث بعد المزامنة.";
+        }
+        catch (Exception ex)
+        {
+            Status = ex.Message;
+        }
+    }
+
+    public Task QuickSearchAsync()
+    {
+        var vm = new QuickSearchViewModel(_facade);
+        _openTab("quick-search", "بحث سريع", vm);
+        return Task.CompletedTask;
+    }
+
+    public async Task RefreshAsync()
+    {
+        await LoadPolicyAsync().ConfigureAwait(true);
+        Status = "تمت إعادة الحساب من سياسة الشركة.";
+    }
+
+    public async Task OpenSelectedDetailsAsync()
+    {
+        if (SelectedLine is null)
+        {
+            Status = "حدد سطر صنف أولاً لفتح حركة الصنف.";
+            return;
+        }
+        if (!Guid.TryParse(WarehouseIdText, out var warehouse) || warehouse == Guid.Empty)
+        {
+            Status = "حدد المستودع لعرض حركة الصنف.";
+            return;
+        }
+
+        var vm = new ItemMovementViewModel(_facade, SelectedLine.ItemId, warehouse, SelectedLine.Name);
+        await vm.RefreshAsync().ConfigureAwait(true);
+        _openTab($"item-movement:{SelectedLine.ItemId:N}:{warehouse:N}", $"حركة {SelectedLine.Name}", vm);
+    }
+
+    private async Task DebounceBarcodeAsync(string value, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(value)) return;
+            await Task.Delay(90, cancellationToken).ConfigureAwait(false);
+            var match = await _facade.FindItemScanAsync(value, cancellationToken).ConfigureAwait(false);
+            if (match is null)
+            {
+                Status = $"لم يتم العثور على الصنف/الباركود: {value}";
+                return;
+            }
+
+            var item = match.Item;
+            var unitOptions = await _facade.GetItemUnitsAsync(item.Id, cancellationToken).ConfigureAwait(false);
+            if (unitOptions.Count == 0) throw new InvalidOperationException("No unit of measure is configured for the selected item.");
+            var defaultUnit = unitOptions.FirstOrDefault(x => x.UnitOfMeasureId == match.PreferredUnitOfMeasureId) ?? unitOptions[0];
+            var suggestedPrice = await _facade.GetSuggestedUnitPriceAsync(
+                ModuleKey, item.Id, defaultUnit.BaseUnitsPerUnit, 0m, cancellationToken).ConfigureAwait(false);
+            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                var existing = Lines.FirstOrDefault(x => x.ItemId == item.Id);
+                if (existing is not null)
+                    existing.Quantity += 1m;
+                else
+                {
+                    var line = new InvoiceLineViewModel
+                    {
+                        SelectedItem = item,
+                        Quantity = 1m,
+                        UnitPrice = suggestedPrice
+                    };
+                    foreach (var option in unitOptions) line.UnitOptions.Add(option);
+                    line.SelectedUnit = defaultUnit;
+                    line.PropertyChanged += OnLineChanged;
+                    Lines.Add(line);
+                    SelectedLine = line;
+                }
+                BarcodeInput = string.Empty;
+                Recalculate();
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Status = ex.Message;
+        }
+    }
+
+    public async Task AddItemAsync(ItemLookup item)
+    {
+        var unitOptions = await _facade.GetItemUnitsAsync(item.Id).ConfigureAwait(true);
+        if (unitOptions.Count == 0) throw new InvalidOperationException("لا توجد وحدة قياس للصنف.");
+        var defaultUnit = unitOptions[0];
+        var suggestedPrice = await _facade.GetSuggestedUnitPriceAsync(ModuleKey, item.Id, defaultUnit.BaseUnitsPerUnit, 0m).ConfigureAwait(true);
+        var line = new InvoiceLineViewModel { SelectedItem = item, Quantity = 1m, UnitPrice = suggestedPrice };
+        foreach (var option in unitOptions) line.UnitOptions.Add(option);
+        line.SelectedUnit = defaultUnit;
+        line.PropertyChanged += OnLineChanged;
+        Lines.Add(line); SelectedLine = line; Recalculate();
+    }
+
+    public async Task ChangeLineItemAsync(InvoiceLineViewModel line, ItemLookup item)
+    {
+        line.SelectedItem = item;
+        line.UnitOptions.Clear();
+        foreach (var option in await _facade.GetItemUnitsAsync(item.Id).ConfigureAwait(true)) line.UnitOptions.Add(option);
+        line.SelectedUnit = line.UnitOptions.FirstOrDefault();
+        if (line.SelectedUnit is not null)
+            line.UnitPrice = await _facade.GetSuggestedUnitPriceAsync(ModuleKey, item.Id, line.SelectedUnit.BaseUnitsPerUnit, line.UnitPrice).ConfigureAwait(true);
+        Recalculate();
+    }
+
+    private async void OnLineChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is InvoiceLineViewModel line && e.PropertyName == nameof(InvoiceLineViewModel.SelectedUnit) && line.SelectedUnit is not null)
+        {
+            try
+            {
+                line.UnitPrice = await _facade.GetSuggestedUnitPriceAsync(ModuleKey, line.ItemId, line.SelectedUnit.BaseUnitsPerUnit, line.UnitPrice).ConfigureAwait(true);
+            }
+            catch (Exception ex) { Status = ex.Message; }
+        }
+        Recalculate();
+    }
+
+    private async Task LoadPolicyAsync()
+    {
+        try
+        {
+            _policy = await _facade.GetPolicyAsync().ConfigureAwait(true);
+            Recalculate();
+        }
+        catch (Exception ex)
+        {
+            Status = ex.Message;
+        }
+    }
+
+    private void Recalculate()
+    {
+        var subtotal = Lines.Sum(x => x.LineTotal);
+        if (_policy is null)
+        {
+            Subtotal = subtotal;
+            Tax = 0m;
+            GrandTotal = subtotal;
+            return;
+        }
+
+        var policy = _policy;
+        Subtotal = decimal.Round(subtotal, policy.CurrencyScale, policy.RoundingMode);
+        if (!policy.TaxPolicy.Enabled || policy.TaxPolicy.Rate == 0m)
+            Tax = 0m;
+        else if (policy.TaxPolicy.PricesIncludeTax)
+        {
+            var net = decimal.Round(Subtotal / (1m + policy.TaxPolicy.Rate), policy.CurrencyScale, policy.RoundingMode);
+            Tax = decimal.Round(Subtotal - net, policy.CurrencyScale, policy.RoundingMode);
+        }
+        else
+            Tax = decimal.Round(Subtotal * policy.TaxPolicy.Rate, policy.CurrencyScale, policy.RoundingMode);
+
+        GrandTotal = policy.TaxPolicy.PricesIncludeTax
+            ? Subtotal
+            : decimal.Round(Subtotal + Tax, policy.CurrencyScale, policy.RoundingMode);
+    }
+
+    private async Task PrintAsync(bool thermal)
+    {
+        try
+        {
+            var branding = await _facade.GetBrandingAsync().ConfigureAwait(true);
+            InvoicePrintService.Preview(size => InvoicePrintService.Build(this, branding, size),
+                "معاينة الفاتورة", thermal);
+        }
+        catch (Exception ex) { Status = ex.Message; }
+    }
+
+    private void NewDocument()
+    {
+        foreach (var line in Lines) line.PropertyChanged -= OnLineChanged;
+        Lines.Clear(); SelectedLine=null; SelectedPartner=null; PaymentMethod="نقدي";
+        DocumentNumber="مسودة"; DocumentDate=DateTimeOffset.Now; IsPosted=false;
+        Status="فاتورة جديدة جاهزة للإدخال."; Recalculate();
+    }
+
+    private void RemoveSelectedLine()
+    {
+        if (SelectedLine is null) return;
+        SelectedLine.PropertyChanged -= OnLineChanged;
+        Lines.Remove(SelectedLine);
+        SelectedLine = null;
+        Recalculate();
+    }
+}
+
+public sealed partial class VoucherEditorViewModel : ObservableObject, IWorkspaceActionTarget
+{
+    private readonly WindowsAccountingFacade _facade;
+    private readonly Action<string, string, object> _openTab;
+    private readonly bool _receipt;
+    private string _status = string.Empty;
+    private bool _voucherPosted;
+    private string _voucherDocumentNumber = "مسودة";
+    private DateTimeOffset _voucherDocumentDate = DateTimeOffset.Now;
+
+    public VoucherEditorViewModel(WindowsAccountingFacade facade, Action<string, string, object> openTab, bool receipt)
+    {
+        _facade = facade; _openTab = openTab; _receipt = receipt;
+        SaveCommand = new AsyncRelayCommand(SaveAndPostAsync);
+        PrintThermalCommand = new AsyncRelayCommand(() => PrintVoucherAsync(true));
+        PrintA4Command = new AsyncRelayCommand(() => PrintVoucherAsync(false));
+        NewVoucherCommand = new RelayCommand(NewVoucher);
+        _ = InitializeProductionVoucherAsync();
+    }
+
+    public string Title => _receipt ? "سند قبض" : "سند صرف";
+    public string CashAccountIdText { get; set; } = string.Empty;
+    public string CounterAccountIdText { get; set; } = string.Empty;
+    public string PartnerIdText { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public string Description { get; set; } = string.Empty;
+    public string Status { get => _status; private set => Set(ref _status, value); }
+    public bool VoucherPosted { get=>_voucherPosted; private set { if(Set(ref _voucherPosted,value)) Raise(nameof(VoucherEditable)); } }
+    public bool VoucherEditable => !VoucherPosted;
+    public string VoucherDocumentNumber { get=>_voucherDocumentNumber; private set=>Set(ref _voucherDocumentNumber,value); }
+    public DateTimeOffset VoucherDocumentDate { get=>_voucherDocumentDate; private set=>Set(ref _voucherDocumentDate,value); }
+    public AsyncRelayCommand SaveCommand { get; }
+    public AsyncRelayCommand PrintThermalCommand { get; }
+    public AsyncRelayCommand PrintA4Command { get; }
+    public RelayCommand NewVoucherCommand { get; }
+
+    public async Task SaveAndPostAsync()
+    {
+        if(VoucherPosted){Status="هذا السند مرحّل. اضغط «سند جديد» لبدء مستند آخر.";return;}
+        var cash = SelectedCashAccount?.Id
+            ?? (Guid.TryParse(CashAccountIdText, out var parsedCash) ? parsedCash : Guid.Empty);
+        var counter = SelectedCounterAccount?.Id
+            ?? (Guid.TryParse(CounterAccountIdText, out var parsedCounter) ? parsedCounter : Guid.Empty);
+        if (cash == Guid.Empty || counter == Guid.Empty || Amount <= 0m)
+        {
+            Status = "تحقق من حساب الصندوق/البنك والحساب المقابل والمبلغ.";
+            return;
+        }
+        var partner = SelectedVoucherPartner?.Id
+            ?? (Guid.TryParse(PartnerIdText, out var partnerId) ? partnerId : (Guid?)null);
+        try
+        {
+            var result = await _facade.PostVoucherAsync(_receipt, cash, counter, partner, Amount, Description).ConfigureAwait(true);
+            var info=await _facade.GetVoucherPrintInfoAsync(_receipt,result.DocumentId).ConfigureAwait(true);
+            VoucherDocumentNumber=info.OfficialNumber=="-"?info.LocalNumber:info.OfficialNumber;VoucherDocumentDate=info.DateUtc;VoucherPosted=true;
+            Status = $"تم ترحيل السند محلياً: {VoucherDocumentNumber}. يمكن معاينته وطباعته الآن.";
+        }
+        catch (Exception ex) { Status = ex.Message; }
+    }
+
+    private async Task PrintVoucherAsync(bool thermal)
+    {
+        try
+        {
+            var branding=await _facade.GetBrandingAsync().ConfigureAwait(true);
+            InvoicePrintService.Preview(size => InvoicePrintService.BuildVoucher(this, branding, size),
+                "معاينة السند", thermal);
+        }
+        catch(Exception ex){Status=ex.Message;}
+    }
+    private void NewVoucher()
+    {
+        Amount=0m;Description=string.Empty;SelectedVoucherPartner=null;VoucherDocumentNumber="مسودة";VoucherDocumentDate=DateTimeOffset.Now;VoucherPosted=false;
+        Raise(nameof(Amount));Raise(nameof(Description));Status="سند جديد جاهز للإدخال.";
+    }
+
+    public Task QuickSearchAsync()
+    {
+        _openTab("quick-search", "بحث سريع", new QuickSearchViewModel(_facade));
+        return Task.CompletedTask;
+    }
+
+    public Task RefreshAsync()
+    {
+        Status = "جاهز.";
+        return Task.CompletedTask;
+    }
+
+    public Task OpenSelectedDetailsAsync()
+    {
+        Status = "F7: أدخل حساب الطرف المقابل ثم افتح دفتر الأستاذ من مساحة العمل.";
+        return Task.CompletedTask;
+    }
+}
+
+public sealed record QuickSearchResultRow(string Type, Guid Id, string Code, string Name, string Extra);
+
+public sealed class QuickSearchViewModel : ObservableObject, IWorkspaceActionTarget
+{
+    private readonly WindowsAccountingFacade _facade;
+    private string _query = string.Empty;
+    private string _status = string.Empty;
+
+    public QuickSearchViewModel(WindowsAccountingFacade facade)
+    {
+        _facade = facade;
+        SearchCommand = new AsyncRelayCommand(SearchAsync);
+    }
+
+    public string Query { get => _query; set => Set(ref _query, value); }
+    public string Status { get => _status; private set => Set(ref _status, value); }
+    public ObservableCollection<QuickSearchResultRow> Results { get; } = new();
+    public AsyncRelayCommand SearchCommand { get; }
+
+    public async Task SearchAsync()
+    {
+        var itemsTask = _facade.SearchItemsAsync(Query);
+        var partnersTask = _facade.SearchPartnersAsync(Query);
+        var accountsTask = _facade.SearchAccountsAsync(Query);
+        await Task.WhenAll(itemsTask, partnersTask, accountsTask).ConfigureAwait(true);
+        Results.Clear();
+        foreach (var x in itemsTask.Result) Results.Add(new("صنف", x.Id, x.Sku, x.Name, x.ItemKind.ToString()));
+        foreach (var x in partnersTask.Result) Results.Add(new("عميل/مورد", x.Id, x.Code, x.Name, $"حد ائتماني {x.CreditLimit}"));
+        foreach (var x in accountsTask.Result) Results.Add(new("حساب", x.Id, x.Code, x.Name, string.Empty));
+        Status = $"{Results.Count} نتيجة";
+    }
+
+    public Task SaveAndPostAsync() { Status = "البحث لا يحتوي مستنداً للترحيل."; return Task.CompletedTask; }
+    public Task QuickSearchAsync() => SearchAsync();
+    public Task RefreshAsync() => SearchAsync();
+    public Task OpenSelectedDetailsAsync() { Status = "انسخ المعرّف لفتح السجل المطلوب من الشاشة المختصة."; return Task.CompletedTask; }
+}
+
+public sealed partial class ItemsViewModel : ObservableObject, IWorkspaceActionTarget
+{
+    private readonly WindowsAccountingFacade _facade;
+    public ObservableCollection<ItemLookup> Items { get; } = new();
+    public ItemsViewModel(WindowsAccountingFacade facade) => _facade = facade;
+    public Task SaveAndPostAsync() => RefreshAsync();
+    public Task QuickSearchAsync() => RefreshAsync();
+    public async Task RefreshAsync()
+    {
+        var rows = await _facade.SearchItemsAsync(string.Empty).ConfigureAwait(true);
+        Items.Clear(); foreach (var x in rows) Items.Add(x);
+    }
+    public Task OpenSelectedDetailsAsync() => RefreshAsync();
+}
+
+public sealed class PartnersViewModel : ObservableObject, IWorkspaceActionTarget
+{
+    private readonly WindowsAccountingFacade _facade;
+    public ObservableCollection<PartnerLookup> Partners { get; } = new();
+    public PartnersViewModel(WindowsAccountingFacade facade) => _facade = facade;
+    public Task SaveAndPostAsync() => RefreshAsync();
+    public Task QuickSearchAsync() => RefreshAsync();
+    public async Task RefreshAsync()
+    {
+        var rows = await _facade.SearchPartnersAsync(string.Empty).ConfigureAwait(true);
+        Partners.Clear(); foreach (var x in rows) Partners.Add(x);
+    }
+    public Task OpenSelectedDetailsAsync() => RefreshAsync();
+}
+
+public sealed class ItemMovementViewModel : ObservableObject, IWorkspaceActionTarget
+{
+    private readonly WindowsAccountingFacade _facade;
+    private readonly Guid _itemId;
+    private readonly Guid _warehouseId;
+    private string _summary = string.Empty;
+    private string _status = "جاهز";
+
+    public string ItemName { get; }
+    public string Summary { get => _summary; private set => Set(ref _summary, value); }
+    public string Status { get => _status; private set => Set(ref _status, value); }
+    public ObservableCollection<ItemMovementRow> Rows { get; } = new();
+    public AsyncRelayCommand PrintA4Command { get; }
+
+    public ItemMovementViewModel(WindowsAccountingFacade facade, Guid itemId, Guid warehouseId, string itemName)
+    {
+        _facade = facade;
+        _itemId = itemId;
+        _warehouseId = warehouseId;
+        ItemName = itemName;
+        PrintA4Command = new AsyncRelayCommand(PrintA4Async);
+    }
+
+    public async Task RefreshAsync()
+    {
+        try
+        {
+            var positionTask = _facade.GetStockPositionAsync(_itemId, _warehouseId);
+            var rowsTask = _facade.GetItemMovementAsync(_itemId, _warehouseId);
+            await Task.WhenAll(positionTask, rowsTask).ConfigureAwait(true);
+
+            Rows.Clear();
+            foreach (var row in rowsTask.Result) Rows.Add(row);
+            var position = positionTask.Result;
+            Summary = $"الكمية: {position.QuantityOnHand:N3} | القيمة: {position.InventoryValue:N2} | المتوسط: {position.AverageUnitCost:N2}";
+            Status = $"عدد الحركات: {Rows.Count}";
+        }
+        catch (Exception ex) { Status = ex.Message; }
+    }
+
+    private async Task PrintA4Async()
+    {
+        try
+        {
+            if (Rows.Count == 0) await RefreshAsync().ConfigureAwait(true);
+            var brand = await _facade.GetBrandingAsync().ConfigureAwait(true);
+            InvoicePrintService.Preview(
+                ReportPrintService.BuildStockCard(ItemName, Rows, brand),
+                $"كرت الصنف — {ItemName}");
+            Status = "تم فتح معاينة كرت الصنف A4.";
+        }
+        catch (Exception ex) { Status = ex.Message; }
+    }
+
+    public Task SaveAndPostAsync() => RefreshAsync();
+    public Task QuickSearchAsync() => RefreshAsync();
+    public Task OpenSelectedDetailsAsync() => PrintA4Async();
+}
+
+public sealed partial class LedgerViewModel : ObservableObject, IWorkspaceActionTarget
+{
+    private readonly WindowsAccountingFacade _facade;
+    private readonly Action<string, string, object> _openTab;
+    private string _accountIdText = string.Empty;
+    private string _status = string.Empty;
+
+    public LedgerViewModel(WindowsAccountingFacade facade, Action<string, string, object> openTab)
+    {
+        _facade = facade; _openTab = openTab;
+    }
+
+    public string AccountIdText { get => _accountIdText; set => Set(ref _accountIdText, value); }
+    public string Status { get => _status; private set => Set(ref _status, value); }
+    public ObservableCollection<LedgerRow> Rows { get; } = new();
+    public ObservableCollection<TrialBalanceRow> TrialBalance { get; } = new();
+
+    public Task SaveAndPostAsync() => RefreshAsync();
+    public Task QuickSearchAsync()
+    {
+        _openTab("quick-search", "بحث سريع", new QuickSearchViewModel(_facade));
+        return Task.CompletedTask;
+    }
+
+    public async Task RefreshAsync()
+    {
+        TrialBalance.Clear();
+        foreach (var row in await _facade.GetTrialBalanceAsync().ConfigureAwait(true)) TrialBalance.Add(row);
+        if (Guid.TryParse(AccountIdText, out var accountId))
+        {
+            Rows.Clear();
+            foreach (var row in await _facade.GetLedgerAsync(accountId).ConfigureAwait(true)) Rows.Add(row);
+            Status = $"عدد حركات الحساب: {Rows.Count}";
+        }
+        else Status = "ميزان المراجعة محدث. أدخل AccountId لعرض دفتر الأستاذ.";
+    }
+
+    public Task OpenSelectedDetailsAsync() => RefreshAsync();
+}
+
+public sealed partial class ShellViewModel : ObservableObject
+{
+    private readonly WindowsAccountingFacade _facade;
+    private readonly LocalSyncStore _syncStore;
+    private readonly Accounting.SharedKernel.UserContext _user;
+    private string _networkStatus = "Offline";
+    private string _syncStatus = string.Empty;
+
+    public ShellViewModel(WindowsAccountingFacade facade, LocalSyncStore syncStore, Accounting.SharedKernel.UserContext user,
+        ModuleRegistry modules, IReadOnlyList<string> enabledModules, string branchName, string userName)
+    {
+        _facade = facade; _syncStore = syncStore; _user = user;
+        BranchName = branchName; UserName = userName;
+        Workspace = new TabWorkspaceManager();
+        Shortcuts = new GlobalKeyboardShortcutHandler(Workspace);
+        ModuleScreens = new ObservableCollection<ModuleScreenDefinition>(modules.VisibleScreens(enabledModules, ActivityPlatform.Windows));
+        OpenSalesCommand = new RelayCommand(() => OpenTab("sales", "فاتورة مبيعات", new InvoiceEditorViewModel(_facade, OpenTab, true, enabledModules.FirstOrDefault() ?? RetailModule.ModuleKey)));
+        OpenPurchaseCommand = new RelayCommand(() => OpenTab("purchase", "فاتورة مشتريات", new InvoiceEditorViewModel(_facade, OpenTab, false, enabledModules.FirstOrDefault() ?? RetailModule.ModuleKey)));
+        OpenReceiptCommand = new RelayCommand(() => OpenTab("receipt", "سند قبض", new VoucherEditorViewModel(_facade, OpenTab, true)));
+        OpenPaymentCommand = new RelayCommand(() => OpenTab("payment", "سند صرف", new VoucherEditorViewModel(_facade, OpenTab, false)));
+        OpenItemsCommand = new RelayCommand(() => OpenTab("items", "الأصناف", new ItemsViewModel(_facade)));
+        OpenPartnersCommand = new RelayCommand(() => OpenTab("partners", "العملاء والموردون", new PartnersViewModel(_facade)));
+        OpenLedgerCommand = new RelayCommand(() => OpenTab("ledger", "دفتر الأستاذ وميزان المراجعة", new LedgerViewModel(_facade, OpenTab)));
+        OpenModuleScreenCommand = new ParameterCommand(OpenModuleScreen);
+        InitializeProductionNavigation(facade, syncStore, user, enabledModules);
+    }
+
+    public TabWorkspaceManager Workspace { get; }
+    public GlobalKeyboardShortcutHandler Shortcuts { get; }
+    public ObservableCollection<ModuleScreenDefinition> ModuleScreens { get; }
+    public string BranchName { get; }
+    public string UserName { get; }
+    public string NetworkStatus { get => _networkStatus; private set => Set(ref _networkStatus, value); }
+    public string SyncStatus { get => _syncStatus; private set => Set(ref _syncStatus, value); }
+    public RelayCommand OpenSalesCommand { get; }
+    public RelayCommand OpenPurchaseCommand { get; }
+    public RelayCommand OpenReceiptCommand { get; }
+    public RelayCommand OpenPaymentCommand { get; }
+    public RelayCommand OpenItemsCommand { get; }
+    public RelayCommand OpenPartnersCommand { get; }
+    public RelayCommand OpenLedgerCommand { get; }
+    public ParameterCommand OpenModuleScreenCommand { get; }
+
+    public void OpenTab(string key, string title, object viewModel) => Workspace.Open(key, title, () => viewModel);
+
+    public async Task RefreshStatusAsync()
+    {
+        NetworkStatus = NetworkInterface.GetIsNetworkAvailable() ? "Online" : "Offline";
+        var status = await _syncStore.GetStatusAsync(_user).ConfigureAwait(true);
+        SyncStatus = $"Outbox: {status.PendingOutbox + status.RetryableFailures} | تعارضات: {status.UnresolvedConflicts} | آخر مزامنة: {(status.LastSuccessfulSyncUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-")}";
+    }
+
+    private void OpenModuleScreen(object? parameter)
+    {
+        if (parameter is not ModuleScreenDefinition screen) return;
+        var moduleKey = screen.Key.Split('.')[0].ToUpperInvariant() switch
+        {
+            "RETAIL" => RetailModule.ModuleKey,
+            "WHOLESALE" => WholesaleModule.ModuleKey,
+            "SERVICES" => ServicesModule.ModuleKey,
+            "RESTAURANT" => RestaurantModule.ModuleKey,
+            _ => RetailModule.ModuleKey
+        };
+        if (screen.Key.Contains("invoice", StringComparison.OrdinalIgnoreCase) || screen.Key.Contains("sales", StringComparison.OrdinalIgnoreCase) || screen.Key.Contains("pos", StringComparison.OrdinalIgnoreCase) || screen.Key.Contains("order", StringComparison.OrdinalIgnoreCase))
+            OpenTab(screen.Key, screen.Title, new InvoiceEditorViewModel(_facade, OpenTab, true, moduleKey));
+        else
+            OpenTab(screen.Key, screen.Title, new QuickSearchViewModel(_facade));
+    }
+}

@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Accounting.Domain/Accounting.Domain.csproj" />
+    <ProjectReference Include="../Accounting.SharedKernel/Accounting.SharedKernel.csproj" />
+  </ItemGroup>
+</Project>

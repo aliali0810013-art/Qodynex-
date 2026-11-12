@@ -1,22 +1,185 @@
-name: accounting-core
+name: accounting-platform
+# final verification trigger
 
 on:
   push:
-    branches: [ main, accounting-core-50 ]
+    branches: [ main, accounting-core-50, ci-build-recovery-20261110, qodynex-unified-integration ]
   pull_request:
     branches: [ main ]
 
+concurrency:
+  group: accounting-platform-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-test:
+  core-server-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: qodynex_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d qodynex_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      QODYNEX_TEST_POSTGRES: Host=localhost;Port=5432;Database=qodynex_test;Username=postgres;Password=postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            Directory.Packages.props
+      - name: Restore core and server tests
+        run: |
+          dotnet restore tests/Accounting.Domain.Tests/Accounting.Domain.Tests.csproj
+          dotnet restore tests/Accounting.Integration.LocalTests/Accounting.Integration.LocalTests.csproj
+          dotnet restore tests/Accounting.UI.Android.ColdStartTests/Accounting.UI.Android.ColdStartTests.csproj
+          dotnet restore tests/Accounting.Server.IntegrationTests/Accounting.Server.IntegrationTests.csproj
+          dotnet restore src/Accounting.Server.Api/Accounting.Server.Api.csproj
+      - name: Build server
+        run: dotnet build src/Accounting.Server.Api/Accounting.Server.Api.csproj --configuration Release --no-restore
+      - name: Domain tests
+        run: dotnet test tests/Accounting.Domain.Tests/Accounting.Domain.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=domain.trx"
+      - name: Local SQLite integration tests
+        run: dotnet test tests/Accounting.Integration.LocalTests/Accounting.Integration.LocalTests.csproj --configuration Release --no-restore --logger "trx;LogFileName=local.trx"
+      - name: Android cold-start offline bootstrap test
+        run: dotnet test tests/Accounting.UI.Android.ColdStartTests/Accounting.UI.Android.ColdStartTests.csproj --configuration Release --no-restore --logger "trx;LogFileName=android-cold-start.trx"
+      - name: PostgreSQL and sync integration tests
+        run: dotnet test tests/Accounting.Server.IntegrationTests/Accounting.Server.IntegrationTests.csproj --configuration Release --no-restore --logger "trx;LogFileName=server.trx"
+
+  windows-desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore Windows app and cold-start tests
+        run: |
+          dotnet restore src/Accounting.UI.Windows/Accounting.UI.Windows.csproj
+          dotnet restore tests/Accounting.UI.Windows.ColdStartTests/Accounting.UI.Windows.ColdStartTests.csproj
+      - name: Build Windows app
+        run: dotnet build src/Accounting.UI.Windows/Accounting.UI.Windows.csproj --configuration Release --no-restore
+      - name: Windows cold-start offline bootstrap test
+        run: dotnet test tests/Accounting.UI.Windows.ColdStartTests/Accounting.UI.Windows.ColdStartTests.csproj --configuration Release --no-restore --logger "trx;LogFileName=windows-cold-start.trx"
+      - name: Publish single-file Windows x64 application
+        shell: pwsh
+        run: |
+          dotnet publish src/Accounting.UI.Windows/Accounting.UI.Windows.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:PublishTrimmed=false -p:PublishReadyToRun=false --output dist/windows
+          if (-not (Test-Path "dist/windows/Qodynex.exe")) { throw "Qodynex.exe was not produced." }
+          Copy-Item "dist/windows/Qodynex.exe" "dist/Qodynex.exe" -Force
+      - name: Smoke-test published Qodynex.exe
+        shell: pwsh
+        run: |
+          $env:QODYNEX_SQLITE_PATH = Join-Path $env:RUNNER_TEMP "qodynex-published-cold-start.db"
+          $process = Start-Process -FilePath (Resolve-Path "dist/Qodynex.exe") -ArgumentList "--cold-start-check" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Published Qodynex.exe cold-start failed with exit code $($process.ExitCode)." }
+      - name: Legacy DB upgrade smoke-test with the published EXE
+        shell: pwsh
+        run: |
+          $env:QODYNEX_SQLITE_PATH = Join-Path $env:RUNNER_TEMP "qodynex-published-legacy.db"
+          Remove-Item $env:QODYNEX_SQLITE_PATH -Force -ErrorAction SilentlyContinue
+          $process = Start-Process -FilePath (Resolve-Path "dist/Qodynex.exe") -ArgumentList @("--legacy-db-smoke","--cold-start-check") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Legacy DB recovery smoke test failed with exit code $($process.ExitCode)." }
+          $backups = Get-ChildItem $env:RUNNER_TEMP -Filter "qodynex_legacy_backup_*.db" -ErrorAction SilentlyContinue
+          if (-not $backups) { throw "Legacy DB recovery did not produce the required backup file." }
+      - name: Full Web ERP accounting scenario with the published EXE
+        shell: pwsh
+        run: |
+          $env:QODYNEX_SQLITE_PATH = Join-Path $env:RUNNER_TEMP "qodynex-web-api-scenario.db"
+          $env:QODYNEX_SMOKE_FAILURE_PATH = Join-Path $env:RUNNER_TEMP "qodynex-web-api-failure.txt"
+          Remove-Item $env:QODYNEX_SQLITE_PATH -Force -ErrorAction SilentlyContinue
+          Remove-Item $env:QODYNEX_SMOKE_FAILURE_PATH -Force -ErrorAction SilentlyContinue
+          $process = Start-Process -FilePath (Resolve-Path "dist/Qodynex.exe") -ArgumentList "--web-api-scenario-check" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            if (Test-Path $env:QODYNEX_SMOKE_FAILURE_PATH) { Get-Content $env:QODYNEX_SMOKE_FAILURE_PATH }
+            throw "Published Web ERP accounting scenario failed with exit code $($process.ExitCode)."
+          }
+      - name: Full WebView2 ERP UI tour with the published EXE
+        shell: pwsh
+        run: |
+          $env:QODYNEX_SQLITE_PATH = Join-Path $env:RUNNER_TEMP "qodynex-web-ui-tour.db"
+          $env:QODYNEX_SMOKE_FAILURE_PATH = Join-Path $env:RUNNER_TEMP "qodynex-web-ui-tour-failure.txt"
+          Remove-Item $env:QODYNEX_SQLITE_PATH -Force -ErrorAction SilentlyContinue
+          Remove-Item $env:QODYNEX_SMOKE_FAILURE_PATH -Force -ErrorAction SilentlyContinue
+          $process = Start-Process -FilePath (Resolve-Path "dist/Qodynex.exe") -ArgumentList "--web-ui-tour-check" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            if (Test-Path $env:QODYNEX_SMOKE_FAILURE_PATH) { Get-Content $env:QODYNEX_SMOKE_FAILURE_PATH }
+            throw "Full WebView2 ERP UI tour failed with exit code $($process.ExitCode)."
+          }
+      - name: Upload clean Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: Qodynex-Windows
+          path: dist/Qodynex.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Restore
-        run: dotnet restore Qodynex.Accounting.sln
-      - name: Build
-        run: dotnet build Qodynex.Accounting.sln --configuration Release --no-restore
-      - name: Test
-        run: dotnet test Qodynex.Accounting.sln --configuration Release --no-build --logger "trx;LogFileName=tests.trx"
+      - name: Install MAUI Android workload
+        run: dotnet workload install maui-android --skip-manifest-update
+      - name: Restore Android app
+        run: dotnet restore src/Accounting.UI.Android/Accounting.UI.Android.csproj
+      - name: Build Android app
+        run: dotnet build src/Accounting.UI.Android/Accounting.UI.Android.csproj --framework net8.0-android --configuration Release --no-restore
+      # CI generates an installable test APK; production distribution requires a
+      # privately managed signing key and explicit release signing configuration.
+      - name: Publish Android APK
+        run: |
+          dotnet publish src/Accounting.UI.Android/Accounting.UI.Android.csproj \
+            --framework net8.0-android --configuration Release \
+            -p:AndroidPackageFormats=apk -p:AndroidKeyStore=false \
+            -p:AndroidSignPackage=true
+          mkdir -p dist
+          apk="$(find src/Accounting.UI.Android/bin/Release/net8.0-android -type f -name '*-Signed.apk' -print -quit)"
+          test -n "$apk"
+          cp "$apk" dist/Qodynex-Android.apk
+          test -s dist/Qodynex-Android.apk
+      - name: Enable KVM for Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Smoke-test Qodynex-Android.apk on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          script: |
+            adb install -r dist/Qodynex-Android.apk
+            adb logcat -c
+            adb shell monkey -p tech.qodynex.accounting -c android.intent.category.LAUNCHER 1
+            sleep 15
+            adb shell pidof tech.qodynex.accounting | grep -E '[0-9]+'
+            adb shell input keyevent KEYCODE_WAKEUP || true
+            adb shell wm dismiss-keyguard || true
+            adb shell dumpsys activity top | grep -q 'tech.qodynex.accounting'
+            adb exec-out screencap -p > /tmp/qodynex-screen.png
+            test -s /tmp/qodynex-screen.png
+            if adb logcat -d -b crash | grep -q 'FATAL EXCEPTION'; then echo "Qodynex Android emitted a fatal crash during cold start."; adb logcat -d -b crash; exit 1; fi
+            echo "Qodynex Android cold-start kept the app process alive, foregrounded its activity, rendered a screen, and emitted no fatal crash."
+      - name: Upload clean Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Qodynex-Android
+          path: dist/Qodynex-Android.apk
+          if-no-files-found: error
+          retention-days: 14
