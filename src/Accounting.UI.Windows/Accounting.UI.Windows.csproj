@@ -17,10 +17,16 @@
     <PackageReference Include="ZXing.Net" />
   </ItemGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Accounting.Application/Accounting.Application.csproj" />
     <ProjectReference Include="../Accounting.Domain/Accounting.Domain.csproj" />
     <ProjectReference Include="../Accounting.Infrastructure.Local/Accounting.Infrastructure.Local.csproj" />
     <ProjectReference Include="../Accounting.Modules/Accounting.Modules.csproj" />
     <ProjectReference Include="../Accounting.Sync.Client/Accounting.Sync.Client.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="WebUI\**\*" />
   </ItemGroup>
 </Project>
