@@ -65,8 +65,10 @@ public static class WebErpScenarioVerifier
         var itemId = Guid.Parse(item.GetProperty("id").GetString()!);
 
         var scan = await GetDataAsync(http, "/api/items/scan/299000000024", ct).ConfigureAwait(true);
-        if (scan.GetProperty("item_id").GetString() != itemId.ToString() || Math.Abs(scan.GetProperty("factor").GetDecimal() - 24m) > 0.0001m)
-            throw new InvalidOperationException("Carton barcode did not resolve to the expected item/unit factor.");
+        var scannedItemId = Guid.Parse(scan.GetProperty("item_id").GetString()!);
+        var scannedFactor = scan.GetProperty("factor").GetDecimal();
+        if (scannedItemId != itemId || Math.Abs(scannedFactor - 24m) > 0.0001m)
+            throw new InvalidOperationException($"Carton barcode did not resolve to the expected item/unit factor. Item={scannedItemId}, Expected={itemId}, Factor={scannedFactor}.");
         var cartonItemUnitId = Guid.Parse(scan.GetProperty("item_unit_id").GetString()!);
 
         var purchase = await PostDataAsync(http, "/api/invoices/post", new
