@@ -120,7 +120,7 @@ public static class WebErpScenarioVerifier
         var printA4 = await GetDataAsync(http, $"/api/print/invoice/{saleId}?size=a4", ct).ConfigureAwait(true);
         foreach (var print in new[] { print80, printA4 })
         {
-            if (!print.GetProperty("qr").GetString()!.StartsWith("data:image/svg+xml;base64,", StringComparison.Ordinal))
+            if (!print.GetProperty("qr").GetString()!.StartsWith("data:image/png;base64,", StringComparison.Ordinal))
                 throw new InvalidOperationException("Printable invoice QR was not generated as a real SVG data URI.");
             var s = print.GetProperty("settings");
             if (s.GetProperty("city").GetString() != "صنعاء" || s.GetProperty("phones").GetString() != "782843242" || string.IsNullOrWhiteSpace(s.GetProperty("logo_data").GetString()))
