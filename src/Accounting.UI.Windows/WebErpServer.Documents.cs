@@ -258,7 +258,7 @@ public sealed partial class WebErpServer
 
     private async Task<object?> ListJournalsAsync(CancellationToken ct)
     {
-        var headers = await _facade.GetRecentJournalsAsync(ct).ConfigureAwait(false); var list = new List<object>();
+        var headers = await _facade.GetRecentJournalsAsync(250, ct).ConfigureAwait(false); var list = new List<object>();
         foreach (var j in headers.Take(250))
         {
             var lines = await _facade.GetJournalDetailsAsync(j.Id, ct).ConfigureAwait(false);
