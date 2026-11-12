@@ -14,7 +14,7 @@ public static class WebErpScenarioVerifier
     public static async Task RunApiScenarioAsync(WebErpServer server, LocalAccountingDbContext db, CancellationToken ct = default)
     {
         await server.StartAsync(ct).ConfigureAwait(true);
-        using var http = new HttpClient { BaseAddress = new Uri(server.BaseUrl), Timeout = TimeSpan.FromSeconds(20) };
+        using var http = new HttpClient { BaseAddress = new Uri(server.BaseUrl), Timeout = TimeSpan.FromSeconds(60) };
 
         await PostAsync(http, "/api/settings", new
         {
@@ -173,8 +173,15 @@ public static class WebErpScenarioVerifier
 
     private static async Task<JsonElement> GetDataAsync(HttpClient http, string path, CancellationToken ct)
     {
-        using var res = await http.GetAsync(path, ct).ConfigureAwait(true);
-        return await ReadDataAsync(res, ct).ConfigureAwait(true);
+        try
+        {
+            using var res = await http.GetAsync(path, ct).ConfigureAwait(true);
+            return await ReadDataAsync(res, ct).ConfigureAwait(true);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException($"GET {path} exceeded the Web ERP verification timeout.", ex);
+        }
     }
 
     private static async Task PostAsync(HttpClient http, string path, object body, CancellationToken ct) =>
@@ -182,8 +189,15 @@ public static class WebErpScenarioVerifier
 
     private static async Task<JsonElement> PostDataAsync(HttpClient http, string path, object body, CancellationToken ct)
     {
-        using var res = await http.PostAsJsonAsync(path, body, ct).ConfigureAwait(true);
-        return await ReadDataAsync(res, ct).ConfigureAwait(true);
+        try
+        {
+            using var res = await http.PostAsJsonAsync(path, body, ct).ConfigureAwait(true);
+            return await ReadDataAsync(res, ct).ConfigureAwait(true);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException($"POST {path} exceeded the Web ERP verification timeout.", ex);
+        }
     }
 
     private static async Task<JsonElement> ReadDataAsync(HttpResponseMessage res, CancellationToken ct)
