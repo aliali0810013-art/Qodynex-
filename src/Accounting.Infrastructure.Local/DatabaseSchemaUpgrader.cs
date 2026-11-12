@@ -128,7 +128,7 @@ public sealed class DatabaseSchemaUpgrader
         if (_databasePath is null)
             throw new InvalidOperationException("The SQLite database is not file-backed and cannot be recovered automatically.");
 
-        try { await _db.Database.CloseConnectionAsync().ConfigureAwait(false); } catch { }
+        try { await _db.Database.CloseConnectionAsync().ConfigureAwait(false); } catch (Exception ignoredError) { System.Diagnostics.Debug.WriteLine(ignoredError); }
         SqliteConnection.ClearAllPools();
 
         if (!File.Exists(_databasePath))
@@ -483,7 +483,7 @@ public sealed class DatabaseSchemaUpgrader
     private static void DeleteIfExists(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); }
-        catch (IOException) { }
+        catch (IOException ioError) { System.Diagnostics.Debug.WriteLine(ioError); }
     }
 }
 
