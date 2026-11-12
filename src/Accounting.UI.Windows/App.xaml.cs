@@ -142,6 +142,7 @@ public partial class App : System.Windows.Application
                 x => x.CompanyId == companyId && x.BranchId == branchId && x.DeviceId == deviceId).ConfigureAwait(true);
             var enabledModules = (state?.EnabledModulesCsv ?? RetailModule.ModuleKey)
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Append(WholesaleModule.ModuleKey)
                 .Select(x => x.ToUpperInvariant())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
@@ -171,31 +172,29 @@ public partial class App : System.Windows.Application
                     userContext,
                     new SystemClock());
 
-            var shell = new ShellViewModel(
-                facade,
-                localSync,
-                userContext,
-                registry,
-                enabledModules,
-                state?.BranchName ?? "الفرع الرئيسي",
-                localDemoMode
-                    ? "مستخدم تجريبي"
-                    : Environment.GetEnvironmentVariable("QODYNEX_USER_NAME") ?? userId.ToString("N")[..8]);
-
-            var mainWindow = new MainShellWindow(shell, coordinator);
-            MainWindow = mainWindow;
-
-            // CI executes the published single-file binary with these switches to
-            // prove migration recovery, SQLite native extraction and real WPF composition.
-            if (e.Args.Any(x => string.Equals(x, "--ui-tour-check", StringComparison.OrdinalIgnoreCase)))
+            if (e.Args.Any(x => string.Equals(x, "--cold-start-check", StringComparison.OrdinalIgnoreCase)))
             {
-                await WindowsUiTourVerifier.RunAsync(mainWindow, shell, facade).ConfigureAwait(true);
                 Shutdown(0);
                 return;
             }
 
-            if (e.Args.Any(x => string.Equals(x, "--cold-start-check", StringComparison.OrdinalIgnoreCase)))
+            var webServer = new WebErpServer(_db, facade, userContext, dbPath);
+
+            if (e.Args.Any(x => string.Equals(x, "--web-api-scenario-check", StringComparison.OrdinalIgnoreCase)))
             {
+                await WebErpScenarioVerifier.RunApiScenarioAsync(webServer, _db).ConfigureAwait(true);
+                await webServer.DisposeAsync().ConfigureAwait(true);
+                Shutdown(0);
+                return;
+            }
+
+            var mainWindow = new WebErpWindow(webServer, coordinator);
+            MainWindow = mainWindow;
+
+            if (e.Args.Any(x => string.Equals(x, "--ui-tour-check", StringComparison.OrdinalIgnoreCase)
+                             || string.Equals(x, "--web-ui-tour-check", StringComparison.OrdinalIgnoreCase)))
+            {
+                await WebErpScenarioVerifier.RunWebViewSmokeAsync(mainWindow).ConfigureAwait(true);
                 Shutdown(0);
                 return;
             }
@@ -208,7 +207,9 @@ public partial class App : System.Windows.Application
             var smokeMode = e.Args.Any(x =>
                 string.Equals(x, "--cold-start-check", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(x, "--ui-tour-check", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(x, "--legacy-db-smoke", StringComparison.OrdinalIgnoreCase));
+                || string.Equals(x, "--legacy-db-smoke", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x, "--web-api-scenario-check", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x, "--web-ui-tour-check", StringComparison.OrdinalIgnoreCase));
 
             if (smokeMode)
             {
@@ -222,7 +223,11 @@ public partial class App : System.Windows.Application
                         File.WriteAllText(failurePath, ex.ToString());
                     }
                 }
-                catch { }
+                catch (Exception writeError)
+                {
+                    System.Diagnostics.Debug.WriteLine(writeError);
+                    RuntimeErrorHub.Report(writeError, "Writing CI smoke failure file", notify: false);
+                }
 
                 System.Diagnostics.Debug.WriteLine(ex);
                 Shutdown(1);
