@@ -68,10 +68,7 @@ public static class RuntimeErrorHub
                 $"{new string('-', 80)}{Environment.NewLine}";
             File.AppendAllText(path, entry);
         }
-        catch
-        {
-            // Error reporting must never become another application error.
-        }
+        catch (Exception logError) { System.Diagnostics.Debug.WriteLine(logError); }
     }
 
     private static void RotateIfNeeded(string path)
