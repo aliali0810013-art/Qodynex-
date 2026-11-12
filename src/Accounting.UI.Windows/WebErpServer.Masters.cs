@@ -28,6 +28,13 @@ public sealed partial class WebErpServer
                 FROM LocalWebItemUnits wu JOIN UnitOfMeasures u ON u.Id=wu.UnitOfMeasureId
                 WHERE wu.ItemId=$item ORDER BY CAST(wu.Factor AS REAL)
                 """, ct, ("$item", item.Id.ToString())).ConfigureAwait(false);
+            foreach (var unit in units)
+            {
+                unit["factor"] = DbDecimal(unit["factor"]);
+                unit["sales_price"] = DbDecimal(unit["sales_price"]);
+                unit["opening_cost"] = DbDecimal(unit["opening_cost"]);
+                unit["is_base"] = Convert.ToInt64(unit["is_base"], CultureInfo.InvariantCulture) == 1;
+            }
             var pos = wh is null ? null : await _facade.GetStockPositionAsync(item.Id, wh.Id, ct).ConfigureAwait(false);
             result.Add(new
             {
@@ -50,6 +57,8 @@ public sealed partial class WebErpServer
             WHERE wu.Barcode=$barcode AND i.IsActive=1 AND i.CompanyId=$company AND i.BranchId=$branch
             """, ct, ("$barcode", barcode.Trim()), ("$company", _user.CompanyId.ToString()), ("$branch", _user.BranchId.ToString())).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"الباركود غير موجود: {barcode}");
+        row["factor"] = DbDecimal(row["factor"]);
+        row["sales_price"] = DbDecimal(row["sales_price"]);
         var itemId = Guid.Parse((string)row["item_id"]!);
         var wh = (await _facade.GetWarehousesAsync(ct).ConfigureAwait(false)).First();
         var pos = await _facade.GetStockPositionAsync(itemId, wh.Id, ct).ConfigureAwait(false);
