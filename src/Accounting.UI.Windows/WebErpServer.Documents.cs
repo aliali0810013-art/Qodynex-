@@ -61,18 +61,24 @@ public sealed partial class WebErpServer
         var total = subtotal + tax;
 
         await _writeGate.WaitAsync(ct).ConfigureAwait(false);
-        Guid documentId;
+        var documentId = x.Id ?? UuidV7.NewGuid();
+        var documentType = sales ? nameof(SalesInvoice) : nameof(PurchaseInvoice);
         try
         {
+            bool exists;
+            await using (var probeCon = await OpenAsync(ct).ConfigureAwait(false))
+                exists = await ScalarLongAsync(probeCon, "SELECT COUNT(*) FROM Documents WHERE Id=$id", ct, ("$id", documentId.ToString())).ConfigureAwait(false) > 0;
+
+            // Sequence generation writes through EF Core. Do it before BEGIN IMMEDIATE;
+            // otherwise the raw SQLite writer lock blocks our own EF transaction.
+            var generatedNumber = exists ? null : await _facade.NextWebDocumentNumberAsync(documentType, ct).ConfigureAwait(false);
+
             await using var con = await OpenAsync(ct).ConfigureAwait(false);
             await ExecuteAsync(con, "BEGIN IMMEDIATE;", ct).ConfigureAwait(false);
             try
             {
-                documentId = x.Id ?? UuidV7.NewGuid();
                 var lineTable = sales ? "SalesInvoiceLines" : "PurchaseInvoiceLines";
                 var parentColumn = sales ? "SalesInvoiceId" : "PurchaseInvoiceId";
-                var documentType = sales ? nameof(SalesInvoice) : nameof(PurchaseInvoice);
-                var exists = await ScalarLongAsync(con, "SELECT COUNT(*) FROM Documents WHERE Id=$id", ct, ("$id", documentId.ToString())).ConfigureAwait(false) > 0;
                 string number;
                 if (exists)
                 {
@@ -90,7 +96,7 @@ public sealed partial class WebErpServer
                 }
                 else
                 {
-                    number = await _facade.NextWebDocumentNumberAsync(documentType, ct).ConfigureAwait(false);
+                    number = generatedNumber ?? throw new InvalidOperationException("تعذر توليد رقم المستند.");
                     await ExecuteAsync(con, """
                         INSERT INTO Documents(Id,CompanyId,BranchId,LocalTempNumber,ModuleKey,ModuleMetadataJson,Status,DocumentDateUtc,PostedAtUtc,PostingOperationId,PostingIdempotencyKey,DocumentType,BusinessPartnerId,WarehouseId,SettlementAccountId)
                         VALUES($id,$company,$branch,$number,$module,$metadata,0,$date,NULL,NULL,NULL,$type,$partner,$warehouse,$settlement)
@@ -200,8 +206,14 @@ public sealed partial class WebErpServer
         await _writeGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            bool exists;
+            await using (var probeCon = await OpenAsync(ct).ConfigureAwait(false))
+                exists = await ScalarLongAsync(probeCon, "SELECT COUNT(*) FROM Documents WHERE Id=$id", ct, ("$id", id.ToString())).ConfigureAwait(false) > 0;
+
+            // Keep EF sequence writes outside raw SQLite connection scopes to avoid
+            // lock inversion between Microsoft.Data.Sqlite and the EF Core unit of work.
+            var generatedNumber = exists ? null : await _facade.NextWebDocumentNumberAsync(documentType, ct).ConfigureAwait(false);
             await using var con = await OpenAsync(ct).ConfigureAwait(false);
-            var exists = await ScalarLongAsync(con, "SELECT COUNT(*) FROM Documents WHERE Id=$id", ct, ("$id", id.ToString())).ConfigureAwait(false) > 0;
             if (exists)
             {
                 var st = await ScalarLongAsync(con, "SELECT Status FROM Documents WHERE Id=$id", ct, ("$id", id.ToString())).ConfigureAwait(false);
@@ -213,7 +225,7 @@ public sealed partial class WebErpServer
             }
             else
             {
-                var number = await _facade.NextWebDocumentNumberAsync(documentType, ct).ConfigureAwait(false);
+                var number = generatedNumber ?? throw new InvalidOperationException("تعذر توليد رقم السند.");
                 await ExecuteAsync(con, """
                     INSERT INTO Documents(Id,CompanyId,BranchId,LocalTempNumber,ModuleKey,ModuleMetadataJson,Status,DocumentDateUtc,PostedAtUtc,PostingOperationId,PostingIdempotencyKey,DocumentType,
                                           CashOrBankAccountId,CounterAccountId,BusinessPartnerId,VoucherAmount,VoucherDescription)
