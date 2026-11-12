@@ -253,6 +253,19 @@ public sealed partial class WebErpServer : IAsyncDisposable
 
     private static string Dec(decimal value) => value.ToString(CultureInfo.InvariantCulture);
 
+    private static decimal DbDecimal(object? value)
+    {
+        if (value is null or DBNull) return 0m;
+        if (value is decimal decimalValue) return decimalValue;
+        if (value is double doubleValue) return Convert.ToDecimal(doubleValue, CultureInfo.InvariantCulture);
+        if (value is float floatValue) return Convert.ToDecimal(floatValue, CultureInfo.InvariantCulture);
+        if (value is long longValue) return longValue;
+        if (value is int intValue) return intValue;
+        var text = Convert.ToString(value, CultureInfo.InvariantCulture);
+        if (decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed)) return parsed;
+        throw new InvalidOperationException($"Invalid decimal value in local database: '{text}'.");
+    }
+
     // EF Core's SQLite provider persists Guid values as upper-case TEXT. The embedded
     // Web ERP also writes through raw Microsoft.Data.Sqlite commands, so normalize every
     // Guid-shaped parameter to the provider representation. Without this, raw lower-case
