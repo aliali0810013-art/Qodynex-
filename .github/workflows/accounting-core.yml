@@ -1,4 +1,5 @@
 name: accounting-platform
+# final verification trigger
 
 on:
   push:
